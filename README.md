@@ -21,5 +21,7 @@
 7. Добавить еще один файл в examples/: client.c или server.c;✅
 
 8. Реализовать соединение и передачу данных между примером на языке Python и примером на языке СИ;✅
+<img width="840" height="89" alt="image" src="https://github.com/user-attachments/assets/60ac29ed-ab3a-44a6-b0cd-a14f1973007d" />
+<img width="808" height="53" alt="image" src="https://github.com/user-attachments/assets/047a91cf-3899-48b2-898b-17b9049bc7d1" />
 
 9. git commit && git push✅
