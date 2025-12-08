@@ -1,3 +1,4 @@
 [submodule "AndroidDevelopment_sibsutis"]
 	path = AndroidDevelopment_sibsutis
 	url = https://github.com/seg0ga/AndroidDevelopment_sibsutis
+	branch = sockets

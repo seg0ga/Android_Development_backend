@@ -1,21 +1,31 @@
-import socket
-from colorama import Fore
+import zmq
+from colorama import Fore,init
 
-server_socket=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-server_socket.bind(('localhost',666))
+init(autoreset=True)
+context=zmq.Context()
+socket=context.socket(zmq.REP)
+socket.bind("tcp://0.0.0.0:2222")
 
-server_socket.listen(1)
-print(Fore.YELLOW+"Сервер ожидает подключения...")
-client_socket,client_address = server_socket.accept()
-print(Fore.GREEN+f"Установлено подключение с {client_address}")
+print(Fore.YELLOW+"сервер ожидает подключений на порту 2222...")
+counter=0
 
 
 while True:
-    data=client_socket.recv(1024).decode()
-    print(Fore.BLUE+f"Получены данные: {data}")
+    data=socket.recv_string()
+    counter+=1
 
-    client_socket.sendall(f"Cообщение \"{data}\" успешно получено".encode() )
-    print(Fore.RED+f"Сервер отправил сообщение {client_address}")
+    print(Fore.GREEN+f"Установлено подключение")
+    print(Fore.BLUE+f"Получены данные {data}")
 
-client_socket.close()
-server_socket.close()
+    with open("data.json","a",encoding="utf-8") as f:
+        f.write(data+"\n")
+
+    response=f"Получено пакетов: {counter}"
+    socket.send_string(response)
+
+    print(Fore.RED+f"Сервер отправил сообщение")
+    print()
+
+
+socket.close()
+context.term()
