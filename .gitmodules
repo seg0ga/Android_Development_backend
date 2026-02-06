@@ -1,6 +1,6 @@
 [submodule "AndroidDevelopment_sibsutis"]
 	path = AndroidDevelopment_sibsutis
-	url = https://github.com/seg0ga/AndroidDevelopment_sibsutis
+	url = https://github.com/seg0ga/AndroidDevelopment_sibsutis.git
 	branch = main
 [submodule "third_party/implot"]
 	path = third_party/implot
