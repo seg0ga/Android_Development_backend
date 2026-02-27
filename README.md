@@ -54,4 +54,5 @@ static location locationInfo;
 ```
 ### Результат: 
 
-<img width="606" height="528" alt="image" src="https://github.com/user-attachments/assets/afb86f94-056c-464a-840e-294b2b04a481" />
+<img width="901" height="606" alt="image" src="https://github.com/user-attachments/assets/dd52635f-c1c2-43f5-bc9d-32407cae6209" />
+
