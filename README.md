@@ -1,58 +1,33 @@
 # Android_Development_backend
 # Все лабораторные работы по порядковым номерах находятся в ветках, здесь только крайняя лаба...
-# В пятницу 27.02 должна появиться 10 лаба...
 
-## 9. Backend-сервер на CXX
 
-1. Скоректировать backend-сервер в сторону работы на базе языка C++.✅
-2. Реализовать передачу данных о местоположении смартфона (см. Задание №6) на CXX-сервер.
+## Практическая работа №10 "Android background service."
 
-   Сервер должен:
-    * При получении данных от смартфона сохранять их в файл .json;✅
-    * Работа ZMQ-сокетов должна выполняться в отдельном (от int main()) потоке (thread).✅
-    * Приложение (Android) должно автоматически переподключаться к серверной части, в случае разрыва соединения (при помощи try и проверки на разрыв соединения);✅
+### Ссылка на репозиторий с Android: https://github.com/seg0ga/AndroidDevelopment_sibsutis
+### Цель
+1. Реализовать в приложении Android сервис работы в фоновом режиме.✅
+2. Реализовать получение данных и передачу на backend-сервер след. данные о смартфоне:
+   1. При помощи класса Telephony получаем информацию о сетях мобильной связи:
+      1. CellInfoLte: CellIdentityLte, CellSignalStrengthLte;
+         1. CellIdentityLte: Band, CellIdentity, EARFCN, MCC, MNC, PCI, TAC;✅
+         2. CellSignalStrengthLte: ASU Level, CQI, RSRP, RSRQ, RSSI, RSSNR, Timing Advance;✅
+      2. CellInfoGsm: CellIdentityGSM, CellSignalStrengthGsm;
+         1. CellIdentityGSM: CellIdentity, BSIC, ARFCN, LAC, MCC, MNC, PSC;✅
+         2. CellSignalStrengthGsm: Dbm, RSSI, Timing Advance;✅
+      3. CellInfoNr: CellwIdentityNr, CellSignalStrengthNr
+         1. CellIdentityNr: Band, NCI, PCI, Nrargcn, TAC, MCC, MNC;✅
+         2. CellSignalStrengthNr: SS-RSRP, SS-RSRQ, SS-SINR, Timing Advance;✅
+   2. Данные о местоположении смартфона (см. практику №6):
+      1. Latitude;✅
+      2. Longitude;✅
+      3. Altitude;✅
+      4. Current Time;✅
+      5. Accurace - точность вычисления местоположения✅
+   3. Информацию о сетевом трафике смартфона:
+      1. Информация об общем количестве переданных данных;✅
+      2. Информация о ТОП приложений (входящих в 2-сигма по потреблению трафика), потребляющих интернет-трафик смартфона.⚠️ (В процессе)
 
-3. Реализовать графический интерфейс (ImGUI или Qt5\6), в котором (Здесь начинается ТВОРЧЕСТВО):
+<img width="301" height="595" alt="image" src="https://github.com/user-attachments/assets/0a5286d2-8409-4feb-a576-6aaecec87b06" />
 
-    * Релизовать виджет (окно) с информацией о местоположении (которую мы получили в пункте 2.). В виде текстовой информации;✅
-
-    * Информация должна обновляться каждый раз, когда данные принимаются от Android-приложения;✅
-
-    * Обернуть реализацию визуального интерфейса в отдельный поток (см. по аналогии с пунктом 2.2).✅
-
-4. Связь между двумя потоками (пункты 2.2 и 3.3) осуществляется при помощи одной общей структуры (или класса), например:✅
-
-``` c++
-struct location
-{
-float latitude;
-float longitude;
-float altitude;
-// и т.д.
-};
-
-void run_gui(locaiton *loc){
-// здесь работает GUI поток
-// Выводит данные из ГЛОБАЛЬНОЙ структуры location
-}
-
-void run_server(locaiton *loc){
-// Здесь работает поток серверный
-// Записывает данные в ГЛОБАЛЬНУЮ структуру location
-}
-
-int main(){
-static location locationInfo;
-
-    std::thread gui_thread(run_gui, &locationInfo);
-    std::thread server_thread(run_server, &locationInfo);
-
-    gui_thread.join();
-    server_thread.join();
-
-    return 0;
-}
-```
-### Результат:
-
-<img width="606" height="528" alt="image" src="https://github.com/user-attachments/assets/afb86f94-056c-464a-840e-294b2b04a481" />
+<img width="1280" height="779" alt="image" src="https://github.com/user-attachments/assets/45ecd7aa-d62a-4244-8545-7303c8e4f2b6" />
