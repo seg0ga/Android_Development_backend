@@ -22,7 +22,7 @@ struct LocationData {
     float latitude=0.0f;
     float longitude=0.0f;
     float altitude=0.0f;
-    std::string time="Нет данных";
+    std::string time="No data";
     std::mutex mutex;};
 
 struct LocationHistory {
@@ -162,8 +162,6 @@ void run_gui(LocationData *loc){
         ImGui::SetCursorPosY(400);
         ImGui::Separator();
         ImGui::Spacing();
-        ImGui::TextColored(ImVec4(0.00f, 0.95f, 0.00f, 1.00f),"●");
-        ImGui::SameLine();
         ImGui::TextColored(ImVec4(0.70f, 0.70f, 0.70f, 1.00f), "GPS Active");
         ImGui::SameLine(ImGui::GetWindowWidth()-120);
         ImGui::End();
