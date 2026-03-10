@@ -1,32 +1,18 @@
 # Android_Development_backend
 # Все лабораторные работы по порядковым номерах находятся в ветках, здесь только крайняя лаба...
 
-## Практическая работа №10 "Android background service."
+## Практическая работа №11 "Android background service."
 
-### Ссылка на репозиторий с Android: https://github.com/seg0ga/AndroidDevelopment_sibsutis
 ### Цель
-1. Реализовать в приложении Android сервис работы в фоновом режиме.✅
-2. Реализовать получение данных и передачу на backend-сервер след. данные о смартфоне:
-   1. При помощи класса Telephony получаем информацию о сетях мобильной связи:
-      1. CellInfoLte: CellIdentityLte, CellSignalStrengthLte;
-         1. CellIdentityLte: Band, CellIdentity, EARFCN, MCC, MNC, PCI, TAC;✅
-         2. CellSignalStrengthLte: ASU Level, CQI, RSRP, RSRQ, RSSI, RSSNR, Timing Advance;✅
-      2. CellInfoGsm: CellIdentityGSM, CellSignalStrengthGsm;
-         1. CellIdentityGSM: CellIdentity, BSIC, ARFCN, LAC, MCC, MNC, PSC;✅
-         2. CellSignalStrengthGsm: Dbm, RSSI, Timing Advance;✅
-      3. CellInfoNr: CellwIdentityNr, CellSignalStrengthNr
-         1. CellIdentityNr: Band, NCI, PCI, Nrargcn, TAC, MCC, MNC;✅
-         2. CellSignalStrengthNr: SS-RSRP, SS-RSRQ, SS-SINR, Timing Advance;✅
-   2. Данные о местоположении смартфона (см. практику №6):
-      1. Latitude;✅
-      2. Longitude;✅
-      3. Altitude;✅
-      4. Current Time;✅
-      5. Accurace - точность вычисления местоположения✅
-   3. Информацию о сетевом трафике смартфона:
-      1. Информация об общем количестве переданных данных;✅
-      2. Информация о ТОП приложений (входящих в 2-сигма по потреблению трафика), потребляющих интернет-трафик смартфона.⚠️ (В процессе)
+1. Реализовать в приложении Android сервис работы в фоновом режиме.⚠️ (В другом репозитории - https://github.com/seg0ga/AndroidDevelopment_sibsutis)
+    - Перенести функцию определения местоположения в Service;
+    - Перенести функцию получения данных о сети в Service;
+    - Перенести отправку посредством сокетов в Service.
+2. Реализовать отображение параметров мощности радиосигнала (CellSignalStrength) на графиках по мере получения данных с мобильного устройства.
+    - Для графиков использовать библиотеку ImPlot.✅
 
-<img width="301" height="595" alt="image" src="https://github.com/user-attachments/assets/0a5286d2-8409-4feb-a576-6aaecec87b06" />
+3. Обновить git-репозиторий.✅
+   <img width="332" height="640" alt="image" src="https://github.com/user-attachments/assets/17dc7c7d-6437-4e9d-8345-0a77660729f1" />
 
-<img width="1280" height="779" alt="image" src="https://github.com/user-attachments/assets/45ecd7aa-d62a-4244-8545-7303c8e4f2b6" />
+
+

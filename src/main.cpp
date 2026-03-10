@@ -59,10 +59,23 @@ struct LocationHistory{
     std::vector<std::string> times;
     std::vector<long long> time_milliseconds;
     std::vector<TrafficData> trafficHistory;
+    std::vector<std::vector<CellTowerData>> cellTowersHistory;
+    std::mutex mutex;};
+
+struct SignalHistory{
+    std::vector<double>timestamps;
+    std::vector<double>rsrp_values;
+    std::vector<double>rsrq_values;
+    std::vector<double>rssnr_values;
+    std::vector<double>ss_rsrp_values;
+    std::vector<double>ss_rsrq_values;
+    std::vector<double>ss_sinr_values;
+    std::vector<double>dbm_values;
     std::mutex mutex;};
 
 LocationData g_locationData;
 LocationHistory g_locationHistory;
+SignalHistory g_signalHistory;
 
 void saveToJsonFile(const LocationData& data,int counter){
     try {
@@ -142,7 +155,7 @@ void run_gui(LocationData* loc){
     SDL_Window* window=SDL_CreateWindow(
         "LOCATION & TELEPHONY",
         SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
-        1000,700,SDL_WINDOW_OPENGL|SDL_WINDOW_RESIZABLE);
+        1400,900,SDL_WINDOW_OPENGL|SDL_WINDOW_RESIZABLE);
     SDL_GLContext gl_context=SDL_GL_CreateContext(window);
     ImGui::CreateContext();
     ImPlot::CreateContext();
@@ -177,14 +190,14 @@ void run_gui(LocationData* loc){
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
         ImGui::SetNextWindowPos(ImVec2(0,0));
-        ImGui::SetNextWindowSize(ImVec2(1000,700));
+        ImGui::SetNextWindowSize(ImVec2(1400,900));
         ImGui::Begin("LOCATION & TELEPHONY",nullptr,
             ImGuiWindowFlags_NoResize|
             ImGuiWindowFlags_NoMove|
             ImGuiWindowFlags_NoCollapse|
             ImGuiWindowFlags_NoSavedSettings);
         ImGui::Columns(2,"main_columns",false);
-        ImGui::SetColumnWidth(0,350);
+        ImGui::SetColumnWidth(0,400);
         float left_start_y=ImGui::GetCursorPosY();
         ImGui::TextColored(ImVec4(0.00f,0.70f,1.00f,1.00f),"CURRENT POSITION");
         ImGui::Spacing();
@@ -235,10 +248,132 @@ void run_gui(LocationData* loc){
         ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0.00f,0.80f,1.00f,1.00f));
         ImGui::Text("%.2f MB",tx_mb);
         ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Spacing();
         ImGui::NextColumn();
-        ImGui::SetColumnWidth(1,610);
+        ImGui::SetColumnWidth(1,960);
         ImGui::SetCursorPosY(left_start_y);
-        ImGui::BeginChild("Towers Block",ImVec2(0,0),true);
+        ImGui::BeginChild("Graphs and Towers",ImVec2(0,0),true);
+        ImGui::TextColored(ImVec4(0.00f,0.70f,1.00f,1.00f),"SIGNAL POWER GRAPHICS");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        std::vector<double> rsrp,rsrq,rssnr,ss_rsrp,ss_rsrq,ss_sinr,dbm;
+        int data_count=0;
+        {   std::lock_guard<std::mutex> lock(g_signalHistory.mutex);
+            rsrp=g_signalHistory.rsrp_values;
+            rsrq=g_signalHistory.rsrq_values;
+            rssnr=g_signalHistory.rssnr_values;
+            ss_rsrp=g_signalHistory.ss_rsrp_values;
+            ss_rsrq=g_signalHistory.ss_rsrq_values;
+            ss_sinr=g_signalHistory.ss_sinr_values;
+            dbm=g_signalHistory.dbm_values;
+            data_count=rsrp.size();}
+
+        ImGui::Text("Data points: %d",data_count);
+        ImGui::Spacing();
+        if (data_count>0){
+            double min_rsrp=*std::min_element(rsrp.begin(),rsrp.end());
+            double max_rsrp=*std::max_element(rsrp.begin(),rsrp.end());
+            double min_rsrq=*std::min_element(rsrq.begin(),rsrq.end());
+            double max_rsrq=*std::max_element(rsrq.begin(),rsrq.end());
+            double min_rssnr=*std::min_element(rssnr.begin(),rssnr.end());
+            double max_rssnr=*std::max_element(rssnr.begin(),rssnr.end());
+            double padding=5.0;
+            float graph_height=200.0f;
+            if (ImPlot::BeginPlot("RSRP (dBm) - LTE",ImVec2(-1,graph_height))){
+                ImPlot::SetupAxes("Measurement number","dBm");
+                ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
+                ImPlot::SetupAxisLimits(ImAxis_Y1,min_rsrp-padding,max_rsrp+padding,ImGuiCond_Always);
+                ImPlot::PlotLine("RSRP",rsrp.data(),data_count);
+                ImPlot::EndPlot();}
+            ImGui::Spacing();
+
+            if (ImPlot::BeginPlot("RSRQ (dB) - LTE", ImVec2(-1,graph_height))){
+                ImPlot::SetupAxes("Measurement number", "dB");
+                ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
+                ImPlot::SetupAxisLimits(ImAxis_Y1,min_rsrq-padding,max_rsrq+padding,ImGuiCond_Always);
+                ImPlot::PlotLine("RSRQ",rsrq.data(),data_count);
+                ImPlot::EndPlot();}
+            ImGui::Spacing();
+
+            if (ImPlot::BeginPlot("RSSNR (dB) - LTE",ImVec2(-1,graph_height))){
+                ImPlot::SetupAxes("Measurement number", "dB");
+                ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
+                ImPlot::SetupAxisLimits(ImAxis_Y1,min_rssnr-padding,max_rssnr+padding,ImGuiCond_Always);
+                ImPlot::PlotLine("RSSNR",rssnr.data(),data_count);
+                ImPlot::EndPlot();}
+            ImGui::Spacing();
+
+            if (!ss_rsrp.empty()&&ss_rsrp.size()==data_count){
+                double min_ss_rsrp=*std::min_element(ss_rsrp.begin(),ss_rsrp.end());
+                double max_ss_rsrp=*std::max_element(ss_rsrp.begin(),ss_rsrp.end());
+                if (ImPlot::BeginPlot("SS-RSRP (dBm) - 5G NR",ImVec2(-1,graph_height))){
+                    ImPlot::SetupAxes("Measurement number","dBm");
+                    ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
+                    ImPlot::SetupAxisLimits(ImAxis_Y1,min_ss_rsrp-padding,max_ss_rsrp+padding,ImGuiCond_Always);
+                    ImPlot::PlotLine("SS-RSRP",ss_rsrp.data(),data_count);
+                    ImPlot::EndPlot();}ImGui::Spacing();}
+
+            if (!ss_rsrq.empty()&&ss_rsrq.size()==data_count){
+                double min_ss_rsrq=*std::min_element(ss_rsrq.begin(),ss_rsrq.end());
+                double max_ss_rsrq=*std::max_element(ss_rsrq.begin(),ss_rsrq.end());
+
+                if (ImPlot::BeginPlot("SS-RSRQ (dB) - 5G NR",ImVec2(-1,graph_height))){
+                    ImPlot::SetupAxes("Measurement number", "dB");
+                    ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
+                    ImPlot::SetupAxisLimits(ImAxis_Y1,min_ss_rsrq-padding,max_ss_rsrq+padding,ImGuiCond_Always);
+                    ImPlot::PlotLine("SS-RSRQ",ss_rsrq.data(),data_count);
+                    ImPlot::EndPlot();}ImGui::Spacing();}
+
+            if (!ss_sinr.empty()&&ss_sinr.size()==data_count){
+                double min_ss_sinr=*std::min_element(ss_sinr.begin(),ss_sinr.end());
+                double max_ss_sinr=*std::max_element(ss_sinr.begin(),ss_sinr.end());
+
+                if (ImPlot::BeginPlot("SS-SINR (dB) - 5G NR",ImVec2(-1,graph_height))){
+                    ImPlot::SetupAxes("Measurement number", "dB");
+                    ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
+                    ImPlot::SetupAxisLimits(ImAxis_Y1,min_ss_sinr-padding,max_ss_sinr+padding,ImGuiCond_Always);
+                    ImPlot::PlotLine("SS-SINR",ss_sinr.data(),data_count);
+                    ImPlot::EndPlot();}ImGui::Spacing();}
+
+            if (!dbm.empty()&&dbm.size()==data_count){
+                double min_dbm=*std::min_element(dbm.begin(),dbm.end());
+                double max_dbm=*std::max_element(dbm.begin(),dbm.end());
+
+                if (ImPlot::BeginPlot("DBM - GSM",ImVec2(-1,graph_height))){
+                    ImPlot::SetupAxes("Measurement number", "dBm");
+                    ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
+                    ImPlot::SetupAxisLimits(ImAxis_Y1,min_dbm-padding,max_dbm+padding,ImGuiCond_Always);
+                    ImPlot::PlotLine("DBM",dbm.data(),data_count);
+                    ImPlot::EndPlot();}ImGui::Spacing();}
+
+            ImGui::Separator();
+            ImGui::Spacing();
+            ImGui::Text("Latest values:");
+            ImGui::Text("LTE RSRP: %.1f dBm",rsrp.back());
+            ImGui::Text("LTE RSRQ: %.1f dB",rsrq.back());
+            ImGui::Text("LTE RSSNR: %.1f dB",rssnr.back());
+
+            if (!ss_rsrp.empty()){
+                ImGui::Text("5G SS-RSRP: %.1f dBm", ss_rsrp.back());
+                ImGui::Text("5G SS-RSRQ: %.1f dB", ss_rsrq.back());
+                ImGui::Text("5G SS-SINR: %.1f dB", ss_sinr.back());}
+
+            if (!dbm.empty()){ImGui::Text("GSM DBM: %.1f dBm", dbm.back());}
+
+        }else{
+            ImGui::TextColored(ImVec4(1.0f,0.5f,0.5f,1.0f),"No data to display");
+            ImGui::Text("Send data from phone to see signal strength graphs");}
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
         ImGui::TextColored(ImVec4(0.00f,0.70f,1.00f,1.00f),"TELEPHONY");
         ImGui::Separator();
         ImGui::Spacing();
@@ -253,7 +388,7 @@ void run_gui(LocationData* loc){
                 ImGui::Text("Tower %zu [%s]",i+1,cell.type.c_str());
                 ImGui::PopStyleColor();
                 ImGui::Columns(2,"tower_columns",false);
-                ImGui::SetColumnWidth(0,270);
+                ImGui::SetColumnWidth(0,400);
                 if(cell.type=="LTE"){
                     ImGui::TextColored(ImVec4(0.80f,0.80f,0.80f,1.00f),"Band:");
                     ImGui::SameLine(100);
@@ -371,8 +506,6 @@ void run_gui(LocationData* loc){
         }else{ImGui::TextColored(ImVec4(1.00f,0.50f,0.50f,1.00f),"No cell tower data");}
         ImGui::EndChild();
         ImGui::Columns(1);
-        ImGui::SetCursorPosY(650);
-        ImGui::Spacing();
         ImGui::End();
         ImGui::Render();
         glClearColor(0.08f,0.09f,0.10f,1.0f);
@@ -389,7 +522,6 @@ void run_gui(LocationData* loc){
 
 CellTowerData parseCellTower(const json& cellJson){
     CellTowerData cell;
-
     cell.type=cellJson.value("type","Unknown");
     cell.mcc=cellJson.value("mcc",0);
     cell.mnc=cellJson.value("mnc",0);
@@ -420,7 +552,6 @@ CellTowerData parseCellTower(const json& cellJson){
         cell.ss_rsrq=cellJson.value("ss_rsrq",0);
         cell.ss_sinr=cellJson.value("ss_sinr",0);
         cell.timing_advance_micros = cellJson.value("timing_advance",0);}
-
     return cell;}
 
 void run_server(){
@@ -488,8 +619,32 @@ void run_server(){
                             g_locationHistory.accuracies.push_back(newData.accuracy);
                             g_locationHistory.times.push_back(newData.time);
                             g_locationHistory.time_milliseconds.push_back(newData.time_milliseconds);
-                            g_locationHistory.trafficHistory.push_back(newData.traffic);}
+                            g_locationHistory.trafficHistory.push_back(newData.traffic);
+                            g_locationHistory.cellTowersHistory.push_back(newData.cellTowers);}
+                        {   std::lock_guard<std::mutex> lock(g_signalHistory.mutex);
+                            double timestamp=static_cast<double>(newData.time_milliseconds);
+                            g_signalHistory.timestamps.push_back(timestamp);
 
+                            bool lte_found=false;
+                            for (const auto& cell:newData.cellTowers){
+                                if (cell.type=="LTE"){
+                                    g_signalHistory.rsrp_values.push_back(static_cast<double>(cell.rsrp));
+                                    g_signalHistory.rsrq_values.push_back(static_cast<double>(cell.rsrq));
+                                    g_signalHistory.rssnr_values.push_back(static_cast<double>(cell.rssnr));
+                                    lte_found = true;
+                                    break;}}
+
+                            if (!lte_found){
+                                g_signalHistory.rsrp_values.push_back(-140.0);
+                                g_signalHistory.rsrq_values.push_back(-20.0);
+                                g_signalHistory.rssnr_values.push_back(0.0);}
+
+                            const size_t MAX_HISTORY=50;
+                            if (g_signalHistory.timestamps.size()>MAX_HISTORY){
+                                g_signalHistory.timestamps.erase(g_signalHistory.timestamps.begin());
+                                g_signalHistory.rsrp_values.erase(g_signalHistory.rsrp_values.begin());
+                                g_signalHistory.rsrq_values.erase(g_signalHistory.rsrq_values.begin());
+                                g_signalHistory.rssnr_values.erase(g_signalHistory.rssnr_values.begin());}}
                         counter++;
                         saveToJsonFile(newData,counter);
                         std::string response="OK";
@@ -514,6 +669,5 @@ void run_server(){
 int main(int argc, char *argv[]) {
     std::thread gui_thread(run_gui, &g_locationData);
     std::thread server_thread(run_server);
-
     gui_thread.join();
     server_thread.join();}
