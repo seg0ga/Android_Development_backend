@@ -1,5 +1,4 @@
 # Android_Development_backend
-# Все лабораторные работы по порядковым номерах находятся в ветках, здесь только крайняя лаба...
 
 ## Практическая работа №11 "Android background service."
 
@@ -12,7 +11,6 @@
     - Для графиков использовать библиотеку ImPlot.✅
 
 3. Обновить git-репозиторий.✅
-   <img width="332" height="640" alt="image" src="https://github.com/user-attachments/assets/17dc7c7d-6437-4e9d-8345-0a77660729f1" />
 
-
-
+<img width="332" height="640" alt="image" src="https://github.com/user-attachments/assets/17dc7c7d-6437-4e9d-8345-0a77660729f1" />
+<img width="1405" height="923" alt="image" src="https://github.com/user-attachments/assets/f7dff944-3c78-4489-8339-0a9cb0a056ee" />
