@@ -86,7 +86,7 @@ void saveToJsonFile(const LocationData& data,int counter){
         j["altitude"]=data.altitude;
         j["accuracy"]=data.accuracy;
         j["time"]=data.time;
-        j["time_milliseconds"]=data.time_milliseconds;
+        j["current_time"]=data.time_milliseconds;
 
         json traffic;
         traffic["total_rx"]=data.traffic.total_rx;
