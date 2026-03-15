@@ -558,8 +558,8 @@ void run_server(){
     zmq::context_t context(1);
     zmq::socket_t socket(context,zmq::socket_type::rep);
     try {
-        socket.bind("tcp://*:5555");
-        std::cout<<"Сервер запущен на порту 5555..."<<std::endl;
+        socket.bind("tcp://*:443");
+        std::cout<<"Сервер запущен на порту 443..."<<std::endl;
         std::cout<<"Ожидание данных от Android устройства..."<<std::flush;
         int counter=0;
 
@@ -586,8 +586,9 @@ void run_server(){
                                 if (loc["current_time"].is_string()){
                                     std::string time_str=loc["current_time"];
                                     time_milliseconds=std::stoll(time_str);
-                                }else{time_milliseconds=loc.value("current_time",0LL);}}
+                                }else{time_milliseconds=loc["current_time"].get<long long>();}}
 
+                            newData.time_milliseconds = time_milliseconds;
                             std::time_t time_seconds=static_cast<std::time_t>(time_milliseconds/1000);
                             int milliseconds=static_cast<int>(time_milliseconds%1000);
                             std::stringstream ss;
@@ -667,7 +668,7 @@ void run_server(){
     context.close();}
 
 int main(int argc, char *argv[]) {
-    std::thread gui_thread(run_gui, &g_locationData);
+//   std::thread gui_thread(run_gui, &g_locationData);
     std::thread server_thread(run_server);
-    gui_thread.join();
+//    gui_thread.join();
     server_thread.join();}
