@@ -73,9 +73,19 @@ struct SignalHistory{
     std::vector<double>dbm_values;
     std::mutex mutex;};
 
+struct FilterSettings{
+    bool send_location=true;
+    bool send_traffic=true;
+    bool send_cell_towers=true;
+    bool send_lte_data=true;
+    bool send_gsm_data=true;
+    bool send_nr_data=true;
+    std::mutex mutex;};
+
 LocationData g_locationData;
 LocationHistory g_locationHistory;
 SignalHistory g_signalHistory;
+FilterSettings g_filterSettings;
 
 void saveToJsonFile(const LocationData& data,int counter){
     try {
@@ -150,7 +160,7 @@ void saveToJsonFile(const LocationData& data,int counter){
 
     }catch(const std::exception& e){std::cerr<<"Ошибка сохранения файла: "<<e.what()<<std::endl;}}
 
-void run_gui(LocationData* loc){
+void run_gui(LocationData* loc,zmq::context_t* zmq_context){
     SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER);
     SDL_Window* window=SDL_CreateWindow(
         "LOCATION & TELEPHONY",
@@ -180,6 +190,14 @@ void run_gui(LocationData* loc){
     ImGui_ImplSDL2_InitForOpenGL(window,gl_context);
     ImGui_ImplOpenGL3_Init("#version 330");
     io.FontGlobalScale=1.4f;
+
+    zmq::socket_t command_socket(*zmq_context,zmq::socket_type::dealer);
+    try {command_socket.connect("tcp://172.22.224.1:80");
+        command_socket.set(zmq::sockopt::rcvtimeo,100);
+        command_socket.set(zmq::sockopt::sndtimeo,100);
+        std::cout<<"Сокет команд подключен к порту 80"<<std::endl;
+    }catch(const zmq::error_t& e){std::cerr<<"Ошибка подключения командного сокета: "<<e.what()<<std::endl;}
+
     bool running=true;
     while(running){
         SDL_Event event;
@@ -196,6 +214,48 @@ void run_gui(LocationData* loc){
             ImGuiWindowFlags_NoMove|
             ImGuiWindowFlags_NoCollapse|
             ImGuiWindowFlags_NoSavedSettings);
+
+        if (ImGui::Button("Filters",ImVec2(100, 33))){ImGui::OpenPopup("FiltersPopup");}
+        ImGui::Separator();
+
+        if (ImGui::BeginPopup("FiltersPopup")){
+            ImGui::TextColored(ImVec4(0.00f,0.70f,1.00f,1.00f),"DATA FILTERS");
+            ImGui::Separator();
+            ImGui::Spacing();
+            bool changed=false;
+            {   std::lock_guard<std::mutex> lock(g_filterSettings.mutex);
+                if (ImGui::Checkbox("Send Location Data",&g_filterSettings.send_location))
+                    changed=true;
+                ImGui::Spacing();
+                if (ImGui::Checkbox("Send Traffic Data",&g_filterSettings.send_traffic))
+                    changed=true;
+                ImGui::Spacing();
+                if (ImGui::Checkbox("Send Cell Towers Data",&g_filterSettings.send_cell_towers))
+                    changed=true;
+                ImGui::Indent(20.0f);
+                if (ImGui::Checkbox("  - LTE Cells", &g_filterSettings.send_lte_data))
+                    changed=true;
+                if (ImGui::Checkbox("  - GSM Cells", &g_filterSettings.send_gsm_data))
+                    changed=true;
+                if (ImGui::Checkbox("  - NR/5G Cells",&g_filterSettings.send_nr_data))
+                    changed=true;}
+
+            if (changed){
+                json cmd;
+                cmd["type"]="filter_update";
+                {   std::lock_guard<std::mutex> lock(g_filterSettings.mutex);
+                    cmd["send_location"]=g_filterSettings.send_location;
+                    cmd["send_traffic"]=g_filterSettings.send_traffic;
+                    cmd["send_cell_towers"]=g_filterSettings.send_cell_towers;
+                    cmd["send_lte_data"]=g_filterSettings.send_lte_data;
+                    cmd["send_gsm_data"]=g_filterSettings.send_gsm_data;
+                    cmd["send_nr_data"]=g_filterSettings.send_nr_data;}
+                std::string cmd_str=cmd.dump();
+                zmq::message_t msg(cmd_str.size());
+                memcpy(msg.data(),cmd_str.c_str(),cmd_str.size());
+                command_socket.send(msg, zmq::send_flags::dontwait);
+                std::cout<<"Filters updated: "<<cmd_str<<std::endl;}
+            ImGui::EndPopup();}
         ImGui::Columns(2,"main_columns",false);
         ImGui::SetColumnWidth(0,400);
         float left_start_y=ImGui::GetCursorPosY();
@@ -668,7 +728,8 @@ void run_server(){
     context.close();}
 
 int main(int argc, char *argv[]) {
-//   std::thread gui_thread(run_gui, &g_locationData);
+    zmq::context_t context(1);
+    std::thread gui_thread(run_gui, &g_locationData, &context);
     std::thread server_thread(run_server);
-//    gui_thread.join();
+    gui_thread.join();
     server_thread.join();}
