@@ -9,6 +9,7 @@
 #include <sstream>
 #include <vector>
 #include <map>
+#include <set>
 #include <mutex>
 #include <zmq.hpp>
 #include <nlohmann/json.hpp>
@@ -16,6 +17,7 @@
 #include "backends/imgui_impl_sdl2.h"
 #include "imgui.h"
 #include "implot.h"
+#include "database.h"
 
 using json = nlohmann::json;
 
@@ -45,13 +47,13 @@ struct LocationData{
     float longitude=0.0f;
     float altitude=0.0f;
     float accuracy=0.0f;
-    std::string time="Нет данных";
+    std::string time="No data";
     long long time_milliseconds=0;
     TrafficData traffic;
     std::vector<CellTowerData> cellTowers;
     std::mutex mutex;};
 
-struct LocationHistory{
+struct LocationHistory {
     std::vector<float>latitudes;
     std::vector<float>longitudes;
     std::vector<float>altitudes;
@@ -64,18 +66,46 @@ struct LocationHistory{
 
 struct SignalHistory{
     std::vector<double>timestamps;
-    std::vector<double>rsrp_values;
-    std::vector<double>rsrq_values;
-    std::vector<double>rssnr_values;
-    std::vector<double>ss_rsrp_values;
-    std::vector<double>ss_rsrq_values;
-    std::vector<double>ss_sinr_values;
-    std::vector<double>dbm_values;
+    std::map<int,std::vector<double>> rsrp_values;
+    std::map<int,std::vector<double>> rsrq_values;
+    std::map<int,std::vector<double>> rssi_values;
+    std::map<int,std::vector<double>> rssnr_values;
+    std::map<int,std::vector<double>> ss_rsrp_values;
+    std::map<int,std::vector<double>> ss_rsrq_values;
+    std::map<int,std::vector<double>> ss_sinr_values;
+    std::map<int,std::vector<double>> dbm_values;
     std::mutex mutex;};
 
 LocationData g_locationData;
 LocationHistory g_locationHistory;
 SignalHistory g_signalHistory;
+Database g_database;
+int g_measurementCounter=0;
+const int INT32_MAX_VAL=2147483647;
+
+bool isValidCell(const CellTowerData& cell){
+    if (cell.mcc==INT32_MAX_VAL||cell.mnc==INT32_MAX_VAL) return false;
+    if (cell.rsrp==INT32_MAX_VAL||cell.rsrq==INT32_MAX_VAL) return false;
+    if (cell.cqi==INT32_MAX_VAL) return false;
+    return true;}
+
+bool isValidLocation(const LocationData& data){
+    if (data.latitude==0.0f&&data.longitude==0.0f) return false;
+    if (data.latitude<-90.0f||data.latitude>90.0f) return false;
+    if (data.longitude<-180.0f||data.longitude>180.0f) return false;
+    return true;}
+
+static const ImVec4 pciColors[5]={
+    ImVec4(0.00f,0.80f,1.00f,1.00f),
+    ImVec4(0.95f,0.60f,0.00f,1.00f),
+    ImVec4(0.00f,0.95f,0.60f,1.00f),
+    ImVec4(1.00f,0.00f,0.80f,1.00f),
+    ImVec4(1.00f,0.80f,0.00f,1.00f)};
+
+ImVec4 getColorForPCI(int pci,int index){
+    if (index>=0&&index<5) return pciColors[index];
+    float hue=(pci*0.618f)-(int)(pci*0.618f);
+    return ImVec4(hue,0.7f,0.8f,1.0f);}
 
 void saveToJsonFile(const LocationData& data,int counter){
     try {
@@ -147,8 +177,7 @@ void saveToJsonFile(const LocationData& data,int counter){
         std::ofstream outputFile(filename);
         outputFile<<root.dump(4);
         outputFile.close();
-
-    }catch(const std::exception& e){std::cerr<<"Ошибка сохранения файла: "<<e.what()<<std::endl;}}
+    }catch(const std::exception& e){std::cerr<<"Ошибка сохранения в файл: "<<e.what()<<std::endl;}}
 
 void run_gui(LocationData* loc){
     SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER);
@@ -262,111 +291,127 @@ void run_gui(LocationData* loc){
         std::vector<double> rsrp,rsrq,rssnr,ss_rsrp,ss_rsrq,ss_sinr,dbm;
         int data_count=0;
         {   std::lock_guard<std::mutex> lock(g_signalHistory.mutex);
-            rsrp=g_signalHistory.rsrp_values;
-            rsrq=g_signalHistory.rsrq_values;
-            rssnr=g_signalHistory.rssnr_values;
-            ss_rsrp=g_signalHistory.ss_rsrp_values;
-            ss_rsrq=g_signalHistory.ss_rsrq_values;
-            ss_sinr=g_signalHistory.ss_sinr_values;
-            dbm=g_signalHistory.dbm_values;
-            data_count=rsrp.size();}
+            data_count=g_signalHistory.timestamps.size();}
 
         ImGui::Text("Data points: %d",data_count);
         ImGui::Spacing();
+
         if (data_count>0){
-            double min_rsrp=*std::min_element(rsrp.begin(),rsrp.end());
-            double max_rsrp=*std::max_element(rsrp.begin(),rsrp.end());
-            double min_rsrq=*std::min_element(rsrq.begin(),rsrq.end());
-            double max_rsrq=*std::max_element(rsrq.begin(),rsrq.end());
-            double min_rssnr=*std::min_element(rssnr.begin(),rssnr.end());
-            double max_rssnr=*std::max_element(rssnr.begin(),rssnr.end());
-            double padding=5.0;
             float graph_height=200.0f;
-            if (ImPlot::BeginPlot("RSRP (dBm) - LTE",ImVec2(-1,graph_height))){
-                ImPlot::SetupAxes("Measurement number","dBm");
-                ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
-                ImPlot::SetupAxisLimits(ImAxis_Y1,min_rsrp-padding,max_rsrp+padding,ImGuiCond_Always);
-                ImPlot::PlotLine("RSRP",rsrp.data(),data_count);
-                ImPlot::EndPlot();}
-            ImGui::Spacing();
+            if (!g_signalHistory.rsrp_values.empty()){
+                double min_val=999999,max_val=-999999;
+                for (const auto& pair:g_signalHistory.rsrp_values){
+                    if (!pair.second.empty()){
+                        double min_pair=*std::min_element(pair.second.begin(),pair.second.end());
+                        double max_pair=*std::max_element(pair.second.begin(),pair.second.end());
+                        min_val=std::min(min_val, min_pair);
+                        max_val=std::max(max_val, max_pair);}}
 
-            if (ImPlot::BeginPlot("RSRQ (dB) - LTE", ImVec2(-1,graph_height))){
-                ImPlot::SetupAxes("Measurement number", "dB");
-                ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
-                ImPlot::SetupAxisLimits(ImAxis_Y1,min_rsrq-padding,max_rsrq+padding,ImGuiCond_Always);
-                ImPlot::PlotLine("RSRQ",rsrq.data(),data_count);
-                ImPlot::EndPlot();}
-            ImGui::Spacing();
-
-            if (ImPlot::BeginPlot("RSSNR (dB) - LTE",ImVec2(-1,graph_height))){
-                ImPlot::SetupAxes("Measurement number", "dB");
-                ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
-                ImPlot::SetupAxisLimits(ImAxis_Y1,min_rssnr-padding,max_rssnr+padding,ImGuiCond_Always);
-                ImPlot::PlotLine("RSSNR",rssnr.data(),data_count);
-                ImPlot::EndPlot();}
-            ImGui::Spacing();
-
-            if (!ss_rsrp.empty()&&ss_rsrp.size()==data_count){
-                double min_ss_rsrp=*std::min_element(ss_rsrp.begin(),ss_rsrp.end());
-                double max_ss_rsrp=*std::max_element(ss_rsrp.begin(),ss_rsrp.end());
-                if (ImPlot::BeginPlot("SS-RSRP (dBm) - 5G NR",ImVec2(-1,graph_height))){
+                if (min_val<=max_val&&ImPlot::BeginPlot("RSRP (dBm) - LTE",ImVec2(-1,graph_height))){
                     ImPlot::SetupAxes("Measurement number","dBm");
                     ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
-                    ImPlot::SetupAxisLimits(ImAxis_Y1,min_ss_rsrp-padding,max_ss_rsrp+padding,ImGuiCond_Always);
-                    ImPlot::PlotLine("SS-RSRP",ss_rsrp.data(),data_count);
-                    ImPlot::EndPlot();}ImGui::Spacing();}
+                    ImPlot::SetupAxisLimits(ImAxis_Y1,min_val-5,max_val+5,ImGuiCond_Always);
+                    int idx=0;
+                    for (const auto& pair:g_signalHistory.rsrp_values){
+                        if (idx>=5) break;
+                        std::string label="PCI "+std::to_string(pair.first);
+                        ImVec4 color=getColorForPCI(pair.first,idx);
+                        ImPlot::PlotLine(label.c_str(),pair.second.data(),(int)pair.second.size(),1,0,{ImPlotProp_LineColor,color});
+                        idx++;}
+                    ImPlot::EndPlot();}
+                ImGui::Spacing();}
 
-            if (!ss_rsrq.empty()&&ss_rsrq.size()==data_count){
-                double min_ss_rsrq=*std::min_element(ss_rsrq.begin(),ss_rsrq.end());
-                double max_ss_rsrq=*std::max_element(ss_rsrq.begin(),ss_rsrq.end());
+            if (!g_signalHistory.rsrq_values.empty()){
+                double min_val=999999,max_val=-999999;
+                for (const auto& pair:g_signalHistory.rsrq_values){
+                    if (!pair.second.empty()){
+                        double min_pair=*std::min_element(pair.second.begin(), pair.second.end());
+                        double max_pair=*std::max_element(pair.second.begin(), pair.second.end());
+                        min_val=std::min(min_val,min_pair);
+                        max_val=std::max(max_val,max_pair);}}
 
-                if (ImPlot::BeginPlot("SS-RSRQ (dB) - 5G NR",ImVec2(-1,graph_height))){
-                    ImPlot::SetupAxes("Measurement number", "dB");
+                if (min_val<=max_val&&ImPlot::BeginPlot("RSRQ (dB) - LTE",ImVec2(-1,graph_height))){
+                    ImPlot::SetupAxes("Measurement number","dB");
                     ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
-                    ImPlot::SetupAxisLimits(ImAxis_Y1,min_ss_rsrq-padding,max_ss_rsrq+padding,ImGuiCond_Always);
-                    ImPlot::PlotLine("SS-RSRQ",ss_rsrq.data(),data_count);
-                    ImPlot::EndPlot();}ImGui::Spacing();}
+                    ImPlot::SetupAxisLimits(ImAxis_Y1,min_val-5,max_val+5,ImGuiCond_Always);
+                    int idx=0;
+                    for (const auto& pair:g_signalHistory.rsrq_values){
+                        if (idx>=5) break;
+                        std::string label="PCI "+std::to_string(pair.first);
+                        ImVec4 color=getColorForPCI(pair.first,idx);
+                        ImPlot::PlotLine(label.c_str(),pair.second.data(),(int)pair.second.size(),1,0,{ImPlotProp_LineColor,color});
+                        idx++;}
+                    ImPlot::EndPlot();}
+                ImGui::Spacing();}
 
-            if (!ss_sinr.empty()&&ss_sinr.size()==data_count){
-                double min_ss_sinr=*std::min_element(ss_sinr.begin(),ss_sinr.end());
-                double max_ss_sinr=*std::max_element(ss_sinr.begin(),ss_sinr.end());
+            if (!g_signalHistory.rssi_values.empty()){
+                double min_val=999999,max_val=-999999;
+                for (const auto& pair:g_signalHistory.rssi_values){
+                    if (!pair.second.empty()){
+                        double min_pair=*std::min_element(pair.second.begin(),pair.second.end());
+                        double max_pair=*std::max_element(pair.second.begin(),pair.second.end());
+                        min_val=std::min(min_val,min_pair);
+                        max_val=std::max(max_val,max_pair);}}
 
-                if (ImPlot::BeginPlot("SS-SINR (dB) - 5G NR",ImVec2(-1,graph_height))){
-                    ImPlot::SetupAxes("Measurement number", "dB");
+                if (min_val<=max_val&&ImPlot::BeginPlot("RSSI (dBm) - LTE",ImVec2(-1,graph_height))){
+                    ImPlot::SetupAxes("Measurement number","dBm");
                     ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
-                    ImPlot::SetupAxisLimits(ImAxis_Y1,min_ss_sinr-padding,max_ss_sinr+padding,ImGuiCond_Always);
-                    ImPlot::PlotLine("SS-SINR",ss_sinr.data(),data_count);
-                    ImPlot::EndPlot();}ImGui::Spacing();}
+                    ImPlot::SetupAxisLimits(ImAxis_Y1,min_val-5,max_val+5,ImGuiCond_Always);
+                    int idx=0;
+                    for (const auto& pair:g_signalHistory.rssi_values){
+                        if (idx>=5) break;
+                        std::string label="PCI "+std::to_string(pair.first);
+                        ImVec4 color=getColorForPCI(pair.first,idx);
+                        ImPlot::PlotLine(label.c_str(),pair.second.data(),(int)pair.second.size(),1,0,{ImPlotProp_LineColor,color});
+                        idx++;}
+                    ImPlot::EndPlot();}
+                ImGui::Spacing();}
 
-            if (!dbm.empty()&&dbm.size()==data_count){
-                double min_dbm=*std::min_element(dbm.begin(),dbm.end());
-                double max_dbm=*std::max_element(dbm.begin(),dbm.end());
-
-                if (ImPlot::BeginPlot("DBM - GSM",ImVec2(-1,graph_height))){
-                    ImPlot::SetupAxes("Measurement number", "dBm");
+            if (!g_signalHistory.rssnr_values.empty()){
+                double min_val=999999,max_val=-999999;
+                for (const auto& pair:g_signalHistory.rssnr_values){
+                    if (!pair.second.empty()){
+                        double min_pair=*std::min_element(pair.second.begin(),pair.second.end());
+                        double max_pair=*std::max_element(pair.second.begin(),pair.second.end());
+                        min_val=std::min(min_val,min_pair);
+                        max_val=std::max(max_val,max_pair);}}
+                if (min_val<=max_val&&ImPlot::BeginPlot("RSSNR (dB) - LTE",ImVec2(-1,graph_height))){
+                    ImPlot::SetupAxes("Measurement number","dB");
                     ImPlot::SetupAxisLimits(ImAxis_X1,0,data_count-1,ImGuiCond_Always);
-                    ImPlot::SetupAxisLimits(ImAxis_Y1,min_dbm-padding,max_dbm+padding,ImGuiCond_Always);
-                    ImPlot::PlotLine("DBM",dbm.data(),data_count);
-                    ImPlot::EndPlot();}ImGui::Spacing();}
-
+                    ImPlot::SetupAxisLimits(ImAxis_Y1,min_val-5,max_val+5,ImGuiCond_Always);
+                    int idx=0;
+                    for (const auto& pair:g_signalHistory.rssnr_values){
+                        if (idx>=5) break;
+                        std::string label="PCI "+std::to_string(pair.first);
+                        ImVec4 color=getColorForPCI(pair.first,idx);
+                        ImPlot::PlotLine(label.c_str(),pair.second.data(),(int)pair.second.size(),1,0,{ImPlotProp_LineColor,color});
+                        idx++;}
+                    ImPlot::EndPlot();}
+                ImGui::Spacing();}
             ImGui::Separator();
             ImGui::Spacing();
             ImGui::Text("Latest values:");
-            ImGui::Text("LTE RSRP: %.1f dBm",rsrp.back());
-            ImGui::Text("LTE RSRQ: %.1f dB",rsrq.back());
-            ImGui::Text("LTE RSSNR: %.1f dB",rssnr.back());
-
-            if (!ss_rsrp.empty()){
-                ImGui::Text("5G SS-RSRP: %.1f dBm", ss_rsrp.back());
-                ImGui::Text("5G SS-RSRQ: %.1f dB", ss_rsrq.back());
-                ImGui::Text("5G SS-SINR: %.1f dB", ss_sinr.back());}
-
-            if (!dbm.empty()){ImGui::Text("GSM DBM: %.1f dBm", dbm.back());}
-
+            std::vector<int> pcis;
+            for (const auto& pair:g_signalHistory.rsrp_values){
+                if (!pair.second.empty()) pcis.push_back(pair.first);}
+            int idx=0;
+            for (int pci:pcis){
+                if (idx>=5) break;
+                ImVec4 color=getColorForPCI(pci,idx);
+                ImGui::TextColored(color,"PCI %d",pci);
+                auto rsrp_it=g_signalHistory.rsrp_values.find(pci);
+                if (rsrp_it!=g_signalHistory.rsrp_values.end()&&!rsrp_it->second.empty()){ImGui::TextColored(color,"  RSRP: %.1f dBm",rsrp_it->second.back());}
+                auto rsrq_it=g_signalHistory.rsrq_values.find(pci);
+                if (rsrq_it!=g_signalHistory.rsrq_values.end()&&!rsrq_it->second.empty()){ImGui::TextColored(color,"  RSRQ: %.1f dB",rsrq_it->second.back());}
+                auto rssi_it=g_signalHistory.rssi_values.find(pci);
+                if (rssi_it!=g_signalHistory.rssi_values.end()&&!rssi_it->second.empty()){ImGui::TextColored(color,"  RSSI: %.1f dBm",rssi_it->second.back());}
+                auto rssnr_it=g_signalHistory.rssnr_values.find(pci);
+                if (rssnr_it!=g_signalHistory.rssnr_values.end()&&!rssnr_it->second.empty()){ImGui::TextColored(color,"  SINR: %.1f dB",rssnr_it->second.back());}
+                idx++;
+                ImGui::Spacing();}
         }else{
             ImGui::TextColored(ImVec4(1.0f,0.5f,0.5f,1.0f),"No data to display");
             ImGui::Text("Send data from phone to see signal strength graphs");}
-
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
@@ -551,124 +596,78 @@ CellTowerData parseCellTower(const json& cellJson){
         cell.ss_rsrp=cellJson.value("ss_rsrp",0);
         cell.ss_rsrq=cellJson.value("ss_rsrq",0);
         cell.ss_sinr=cellJson.value("ss_sinr",0);
-        cell.timing_advance_micros = cellJson.value("timing_advance",0);}
+        cell.timing_advance_micros=cellJson.value("timing_advance_micros",0L);}
     return cell;}
 
-void run_server(){
+void updateSignalHistory(const LocationData& data){
+    std::lock_guard<std::mutex> lock(g_signalHistory.mutex);
+    g_signalHistory.timestamps.push_back(g_signalHistory.timestamps.size());
+    for (const auto& cell:data.cellTowers){
+        if (cell.type=="LTE"){
+            g_signalHistory.rsrp_values[cell.pci].push_back(cell.rsrp);
+            g_signalHistory.rsrq_values[cell.pci].push_back(cell.rsrq);
+            g_signalHistory.rssi_values[cell.pci].push_back(cell.rssi);
+            g_signalHistory.rssnr_values[cell.pci].push_back(cell.rssnr);}
+        else if (cell.type=="NR"){
+            g_signalHistory.ss_rsrp_values[cell.pci].push_back(cell.ss_rsrp);
+            g_signalHistory.ss_rsrq_values[cell.pci].push_back(cell.ss_rsrq);
+            g_signalHistory.ss_sinr_values[cell.pci].push_back(cell.ss_sinr);}
+        else if (cell.type=="GSM"){
+            g_signalHistory.dbm_values[cell.pci].push_back(cell.dbm);}}}
+
+void run_zmq_server(LocationData* loc){
     zmq::context_t context(1);
-    zmq::socket_t socket(context,zmq::socket_type::rep);
-    try {
-        socket.bind("tcp://*:443");
-        std::cout<<"Сервер запущен на порту 443..."<<std::endl;
-        std::cout<<"Ожидание данных от Android устройства..."<<std::flush;
-        int counter=0;
+    zmq::socket_t socket(context,ZMQ_REP);
+    socket.bind("tcp://*:443");
+    std::cout<<"\033[32mZMQ сервер запущен на порту 443\033[0m"<<std::endl;
 
-        while (true){
-            try {
-                zmq::message_t request;
-                socket.set(zmq::sockopt::rcvtimeo, 1000);
+    while(true){
+        zmq::message_t request;
+        socket.recv(request);
+        std::string msg=static_cast<char*>(request.data());
 
-                if (socket.recv(request,zmq::recv_flags::none)){
-                    std::string received(static_cast<char*>(request.data()),request.size());
-                    std::cout<<"Получены данные: "<<received<<std::endl;
+        try{
+            json j=json::parse(msg);
+            {   std::lock_guard<std::mutex> lock(loc->mutex);
+                loc->latitude=j.value("latitude",0.0f);
+                loc->longitude=j.value("longitude",0.0f);
+                loc->altitude=j.value("altitude",0.0f);
+                loc->accuracy=j.value("accuracy",0.0f);
+                loc->time=j.value("time","No data");
+                loc->time_milliseconds=j.value("current_time",0LL);
+                if (j.contains("traffic")){
+                    loc->traffic.total_rx=j["traffic"].value("total_rx",0);
+                    loc->traffic.total_tx=j["traffic"].value("total_tx",0);
+                    loc->traffic.total=j["traffic"].value("total",0);}
+                loc->cellTowers.clear();
+                if (j.contains("cells")){
+                    for (const auto& cellJson:j["cells"]){
+                        CellTowerData cell=parseCellTower(cellJson);
+                        loc->cellTowers.push_back(cell);}}
+                g_measurementCounter++;
+                saveToJsonFile(*loc,g_measurementCounter);
+                updateSignalHistory(*loc);
+                if (g_database.isConnected()){
+                    int measurement_id=g_database.insertMeasurement(*loc,g_measurementCounter);
+                    if (measurement_id>0){
+                        for (const auto& cell:loc->cellTowers){
+                            if (isValidCell(cell)){
+                                g_database.insertCell(measurement_id,cell);}}}
+                    std::cout<<"\033[32m[БД]\033[0m Измерение #"<<g_measurementCounter<<" сохранено"<<std::endl;}
+                else{std::cout<<"\033[33m[БД]\033[0m Не подключено, измерение #"<<g_measurementCounter<<" сохранено только в JSON"<<std::endl;}}
+            zmq::message_t reply(5);
+            memcpy(reply.data(),"OK",2);
+            socket.send(reply,zmq::send_flags::none);
+        }catch(const std::exception& e){
+            std::cerr<<"Ошибка обработки JSON: "<<e.what()<<std::endl;
+            zmq::message_t error(5);
+            memcpy(error.data(),"ОШИБКА",5);
+            socket.send(error,zmq::send_flags::none);}}}
 
-                    try {
-                        json j=json::parse(received);
-                        LocationData newData;
-                        if (j.contains("location")&&j["location"].is_object()){
-                            auto& loc=j["location"];
-                            newData.latitude=loc.value("latitude",0.0);
-                            newData.longitude=loc.value("longitude",0.0);
-                            newData.altitude=loc.value("altitude",0.0);
-                            newData.accuracy=loc.value("accuracy",0.0);
-                            long long time_milliseconds=0;
-                            if (loc.contains("current_time")){
-                                if (loc["current_time"].is_string()){
-                                    std::string time_str=loc["current_time"];
-                                    time_milliseconds=std::stoll(time_str);
-                                }else{time_milliseconds=loc["current_time"].get<long long>();}}
-
-                            newData.time_milliseconds = time_milliseconds;
-                            std::time_t time_seconds=static_cast<std::time_t>(time_milliseconds/1000);
-                            int milliseconds=static_cast<int>(time_milliseconds%1000);
-                            std::stringstream ss;
-                            ss<<std::put_time(std::localtime(&time_seconds),"%Y-%m-%d %H:%M:%S");
-                            ss<<"."<<std::setfill('0')<<std::setw(3)<<milliseconds;
-                            newData.time=ss.str();}
-
-                        if (j.contains("traffic")&&j["traffic"].is_object()){
-                            auto& traffic=j["traffic"];
-                            newData.traffic.total_rx=traffic.value("total_rx",0LL);
-                            newData.traffic.total_tx=traffic.value("total_tx",0LL);
-                            newData.traffic.total=traffic.value("total",0LL);}
-
-                        if (j.contains("cells")&&j["cells"].is_array()){
-                            for (const auto& cellJson:j["cells"]){newData.cellTowers.push_back(parseCellTower(cellJson));}}
-                        {   std::lock_guard<std::mutex> lock(g_locationData.mutex);
-                            g_locationData.latitude=newData.latitude;
-                            g_locationData.longitude=newData.longitude;
-                            g_locationData.altitude=newData.altitude;
-                            g_locationData.accuracy=newData.accuracy;
-                            g_locationData.time=newData.time;
-                            g_locationData.time_milliseconds=newData.time_milliseconds;
-                            g_locationData.traffic=newData.traffic;
-                            g_locationData.cellTowers=newData.cellTowers;}
-                        {   std::lock_guard<std::mutex> lock(g_locationHistory.mutex);
-                            g_locationHistory.latitudes.push_back(newData.latitude);
-                            g_locationHistory.longitudes.push_back(newData.longitude);
-                            g_locationHistory.altitudes.push_back(newData.altitude);
-                            g_locationHistory.accuracies.push_back(newData.accuracy);
-                            g_locationHistory.times.push_back(newData.time);
-                            g_locationHistory.time_milliseconds.push_back(newData.time_milliseconds);
-                            g_locationHistory.trafficHistory.push_back(newData.traffic);
-                            g_locationHistory.cellTowersHistory.push_back(newData.cellTowers);}
-                        {   std::lock_guard<std::mutex> lock(g_signalHistory.mutex);
-                            double timestamp=static_cast<double>(newData.time_milliseconds);
-                            g_signalHistory.timestamps.push_back(timestamp);
-
-                            bool lte_found=false;
-                            for (const auto& cell:newData.cellTowers){
-                                if (cell.type=="LTE"){
-                                    g_signalHistory.rsrp_values.push_back(static_cast<double>(cell.rsrp));
-                                    g_signalHistory.rsrq_values.push_back(static_cast<double>(cell.rsrq));
-                                    g_signalHistory.rssnr_values.push_back(static_cast<double>(cell.rssnr));
-                                    lte_found = true;
-                                    break;}}
-
-                            if (!lte_found){
-                                g_signalHistory.rsrp_values.push_back(-140.0);
-                                g_signalHistory.rsrq_values.push_back(-20.0);
-                                g_signalHistory.rssnr_values.push_back(0.0);}
-
-                            const size_t MAX_HISTORY=50;
-                            if (g_signalHistory.timestamps.size()>MAX_HISTORY){
-                                g_signalHistory.timestamps.erase(g_signalHistory.timestamps.begin());
-                                g_signalHistory.rsrp_values.erase(g_signalHistory.rsrp_values.begin());
-                                g_signalHistory.rsrq_values.erase(g_signalHistory.rsrq_values.begin());
-                                g_signalHistory.rssnr_values.erase(g_signalHistory.rssnr_values.begin());}}
-                        counter++;
-                        saveToJsonFile(newData,counter);
-                        std::string response="OK";
-                        zmq::message_t reply(response.size());
-                        memcpy(reply.data(),response.c_str(),response.size());
-                        socket.send(reply, zmq::send_flags::none);
-
-                    }catch (const json::parse_error& e){
-                        std::cerr<<"Ошибка обработки JSON: "<<e.what()<<std::endl;
-                        std::string response="Неправильный JSON";
-                        zmq::message_t reply(response.size());
-                        memcpy(reply.data(),response.c_str(),response.size());
-                        socket.send(reply, zmq::send_flags::none);}}
-            } catch (const zmq::error_t& e){
-                if (e.num()!=EAGAIN){std::cerr<<"Ошибка ZMQ: "<<e.what()<<std::endl;}}
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));}
-    }catch (const std::exception& e){
-        std::cerr<<"Ошибка сервера: "<<e.what()<<std::endl;}
-    socket.close();
-    context.close();}
-
-int main(int argc, char *argv[]) {
-//   std::thread gui_thread(run_gui, &g_locationData);
-    std::thread server_thread(run_server);
-//    gui_thread.join();
-    server_thread.join();}
+int main(){
+    if (g_database.connect()){std::cout<<"\033[32mПодключение к БД успешно\033[0m"<<std::endl;}
+    else{std::cout<<"\033[33mОШИБКА ПОДКЛЮЧЕНИЯ К БД\033[0m"<<std::endl;}
+    std::thread gui_thread(run_gui,&g_locationData);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    run_zmq_server(&g_locationData);
+    gui_thread.join();}

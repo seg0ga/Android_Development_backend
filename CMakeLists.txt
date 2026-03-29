@@ -54,6 +54,7 @@ endif()
 include_directories(${INCLUDE_DIR})
 include_directories(${ZMQ_INCLUDE_DIR})
 include_directories(${NLOHMANN_JSON_INCLUDE_DIR})
+include_directories(${PROJECT_SOURCE_DIR}/include)
 
 add_library(imgui STATIC
         ${THIRD_PARTY_DIR}/imgui/imgui.cpp
@@ -80,11 +81,14 @@ target_link_libraries(implot PRIVATE imgui)
 target_compile_options(implot PRIVATE -fPIC)
 
 
-add_executable(main ${SRC_DIR}/main.cpp)
+add_executable(main
+    ${SRC_DIR}/main.cpp
+    ${SRC_DIR}/database.cpp
+)
 
 
 find_package(Threads REQUIRED)
-
+find_package(PostgreSQL REQUIRED)
 
 target_link_libraries(main PRIVATE
         imgui
@@ -94,6 +98,7 @@ target_link_libraries(main PRIVATE
         ${GLEW_LIBRARIES}
         ${ZMQ_LIBRARY}
         Threads::Threads
+        PostgreSQL::PostgreSQL
 )
 
 
