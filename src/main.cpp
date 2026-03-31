@@ -85,8 +85,7 @@ const int INT32_MAX_VAL=2147483647;
 
 bool isValidCell(const CellTowerData& cell){
     if (cell.mcc==INT32_MAX_VAL||cell.mnc==INT32_MAX_VAL) return false;
-    if (cell.rsrp==INT32_MAX_VAL||cell.rsrq==INT32_MAX_VAL) return false;
-    if (cell.cqi==INT32_MAX_VAL) return false;
+    if (cell.type=="LTE"&&(cell.rsrp==INT32_MAX_VAL||cell.rsrq==INT32_MAX_VAL)) return false;
     return true;}
 
 bool isValidLocation(const LocationData& data){
@@ -625,20 +624,33 @@ void run_zmq_server(LocationData* loc){
         zmq::message_t request;
         socket.recv(request);
         std::string msg=static_cast<char*>(request.data());
+        int open_count=0;
+        int close_count=0;
+        for (char c:msg){
+            if (c=='{') open_count++;
+            if (c=='}') close_count++;}
+        
+        while (close_count>open_count&&!msg.empty()&&msg.back()=='}'){
+            msg.pop_back();
+            close_count--;}
+        
+        while (!msg.empty()&&(msg.back()==' '||msg.back()=='\n'||msg.back()=='\r'||msg.back()=='\t')){msg.pop_back();}
 
         try{
             json j=json::parse(msg);
             {   std::lock_guard<std::mutex> lock(loc->mutex);
-                loc->latitude=j.value("latitude",0.0f);
-                loc->longitude=j.value("longitude",0.0f);
-                loc->altitude=j.value("altitude",0.0f);
-                loc->accuracy=j.value("accuracy",0.0f);
-                loc->time=j.value("time","No data");
-                loc->time_milliseconds=j.value("current_time",0LL);
+                if (j.contains("location") && j["location"].is_object()){
+                    auto& loc_data = j["location"];
+                    loc->latitude=loc_data.value("latitude",0.0f);
+                    loc->longitude=loc_data.value("longitude",0.0f);
+                    loc->altitude=loc_data.value("altitude",0.0f);
+                    loc->accuracy=loc_data.value("accuracy",0.0f);
+                    loc->time=loc_data.value("time","No data");
+                    loc->time_milliseconds=loc_data.value("current_time",0LL);}
                 if (j.contains("traffic")){
-                    loc->traffic.total_rx=j["traffic"].value("total_rx",0);
-                    loc->traffic.total_tx=j["traffic"].value("total_tx",0);
-                    loc->traffic.total=j["traffic"].value("total",0);}
+                    loc->traffic.total_rx=j["traffic"].value("total_rx",0LL);
+                    loc->traffic.total_tx=j["traffic"].value("total_tx",0LL);
+                    loc->traffic.total=j["traffic"].value("total",0LL);}
                 loc->cellTowers.clear();
                 if (j.contains("cells")){
                     for (const auto& cellJson:j["cells"]){
@@ -650,16 +662,28 @@ void run_zmq_server(LocationData* loc){
                 if (g_database.isConnected()){
                     int measurement_id=g_database.insertMeasurement(*loc,g_measurementCounter);
                     if (measurement_id>0){
+                        std::cout<<"  Cells: "<<loc->cellTowers.size()<<std::endl;
                         for (const auto& cell:loc->cellTowers){
-                            if (isValidCell(cell)){
-                                g_database.insertCell(measurement_id,cell);}}}
+                            std::cout<<"  ["<<cell.type<<"] mcc="<<cell.mcc<<" rsrp="<<cell.rsrp<<" cqi="<<cell.cqi<<" band="<<cell.band<<std::endl;
+                            if (isValidCell(cell)){g_database.insertCell(measurement_id,cell);
+                            }else{std::cout<<"  [!] Пропуск записи, кривые значения"<<std::endl;}}}
                     std::cout<<"\033[32m[БД]\033[0m Измерение #"<<g_measurementCounter<<" сохранено"<<std::endl;}
                 else{std::cout<<"\033[33m[БД]\033[0m Не подключено, измерение #"<<g_measurementCounter<<" сохранено только в JSON"<<std::endl;}}
             zmq::message_t reply(5);
             memcpy(reply.data(),"OK",2);
             socket.send(reply,zmq::send_flags::none);
+        }catch(const json::parse_error& e){
+            std::cerr<<"Ошибка JSON: "<<e.what()<<std::endl;
+            std::cerr<<"Длина: "<<msg.size()<<", позиция: "<<e.byte<<std::endl;
+            if (e.byte>0&&e.byte<=msg.size()){
+                size_t start=(e.byte>50)?e.byte-50:0;
+                size_t len=std::min(size_t(100),msg.size()-start);
+                std::cerr<<"Фрагмент: "<<msg.substr(start,len)<<std::endl;}
+            zmq::message_t error(5);
+            memcpy(error.data(),"ОШИБКА",5);
+            socket.send(error,zmq::send_flags::none);
         }catch(const std::exception& e){
-            std::cerr<<"Ошибка обработки JSON: "<<e.what()<<std::endl;
+            std::cerr<<"Ошибка: "<<e.what()<<std::endl;
             zmq::message_t error(5);
             memcpy(error.data(),"ОШИБКА",5);
             socket.send(error,zmq::send_flags::none);}}}
