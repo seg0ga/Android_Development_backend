@@ -567,35 +567,56 @@ void run_gui(LocationData* loc){
 CellTowerData parseCellTower(const json& cellJson){
     CellTowerData cell;
     cell.type=cellJson.value("type","Unknown");
-    cell.mcc=cellJson.value("mcc",0);
-    cell.mnc=cellJson.value("mnc",0);
-    cell.pci=cellJson.value("pci",0);
-    cell.tac=cellJson.value("tac",0);
-    cell.timing_advance=cellJson.value("timing_advance",0);
+
+    auto getIntValue=[&](const std::string& key,int defaultVal=0)->int{
+        auto it=cellJson.find(key);
+        if (it==cellJson.end()) return defaultVal;
+        if (it->is_number_integer()) return it->get<int>();
+        if (it->is_string()){
+            try{return std::stoi(it->get<std::string>());}
+            catch(...){return defaultVal;}}
+        if (it->is_number()) return static_cast<int>(it->get<double>());
+        return defaultVal;};
+    
+    auto getLongValue=[&](const std::string& key,long long defaultVal=0LL)->long long{
+        auto it=cellJson.find(key);
+        if (it==cellJson.end()) return defaultVal;
+        if (it->is_number_integer()) return it->get<long long>();
+        if (it->is_string()){
+            try{return std::stoll(it->get<std::string>());}
+            catch(...){return defaultVal;}}
+        if (it->is_number()) return static_cast<long long>(it->get<double>());
+        return defaultVal;};
+    
+    cell.mcc=getIntValue("mcc",0);
+    cell.mnc=getIntValue("mnc",0);
+    cell.pci=getIntValue("pci",0);
+    cell.tac=getIntValue("tac",0);
+    cell.timing_advance=getIntValue("timing_advance",0);
 
     if (cell.type=="LTE"){
-        cell.band=cellJson.value("band",0);
-        cell.cell_identity=cellJson.value("cell_identity",0);
-        cell.earfcn=cellJson.value("earfcn",0);
-        cell.asu_level=cellJson.value("asu_level",0);
-        cell.cqi=cellJson.value("cqi",0);
-        cell.rsrp=cellJson.value("rsrp",0);
-        cell.rsrq=cellJson.value("rsrq",0);
-        cell.rssi=cellJson.value("rssi",0);
-        cell.rssnr=cellJson.value("rssnr",0);}
+        cell.band=getIntValue("band",0);
+        cell.cell_identity=getIntValue("cell_identity",0);
+        cell.earfcn=getIntValue("earfcn",0);
+        cell.asu_level=getIntValue("asu_level",0);
+        cell.cqi=getIntValue("cqi",0);
+        cell.rsrp=getIntValue("rsrp",0);
+        cell.rsrq=getIntValue("rsrq",0);
+        cell.rssi=getIntValue("rssi",0);
+        cell.rssnr=getIntValue("rssnr",0);}
     else if (cell.type=="GSM"){
-        cell.cell_identity=cellJson.value("cell_identity",0);
-        cell.bsic=cellJson.value("bsic",0);
-        cell.arfcn=cellJson.value("arfcn",0);
-        cell.lac=cellJson.value("lac",0);
-        cell.dbm=cellJson.value("dbm",0);}
+        cell.cell_identity=getIntValue("cell_identity",0);
+        cell.bsic=getIntValue("bsic",0);
+        cell.arfcn=getIntValue("arfcn",0);
+        cell.lac=getIntValue("lac",0);
+        cell.dbm=getIntValue("dbm",0);}
     else if (cell.type=="NR"){
         cell.nci=cellJson.value("nci","");
-        cell.nrarfcn=cellJson.value("nrarfcn",0);
-        cell.ss_rsrp=cellJson.value("ss_rsrp",0);
-        cell.ss_rsrq=cellJson.value("ss_rsrq",0);
-        cell.ss_sinr=cellJson.value("ss_sinr",0);
-        cell.timing_advance_micros=cellJson.value("timing_advance_micros",0L);}
+        cell.nrarfcn=getIntValue("nrarfcn",0);
+        cell.ss_rsrp=getIntValue("ss_rsrp",0);
+        cell.ss_rsrq=getIntValue("ss_rsrq",0);
+        cell.ss_sinr=getIntValue("ss_sinr",0);
+        cell.timing_advance_micros=getLongValue("timing_advance_micros",0L);}
     return cell;}
 
 void updateSignalHistory(const LocationData& data){
@@ -624,15 +645,32 @@ void run_zmq_server(LocationData* loc){
         zmq::message_t request;
         socket.recv(request);
         std::string msg=static_cast<char*>(request.data());
-        int open_count=0;
-        int close_count=0;
-        for (char c:msg){
-            if (c=='{') open_count++;
-            if (c=='}') close_count++;}
+
+        int brace_count=0;
+        size_t first_complete_pos=0;
+        bool in_string=false;
+        bool escape=false;
+        bool started=false;
+        size_t start_pos=0;
+
+        for (size_t i=0;i<msg.size();++i){
+            char c=msg[i];
+            if (escape){escape=false;continue;}
+            if (c=='\\'){escape=true;continue;}
+            if (c=='"'){in_string=!in_string;continue;}
+            if (in_string) continue;
+            if (c=='{'&&!started){
+                started=true;
+                start_pos=i;}
+            
+            if (c=='{') brace_count++;
+            else if (c=='}'){
+                brace_count--;
+                if (brace_count==0&&started){
+                    first_complete_pos=i+1;
+                    break;}}}
         
-        while (close_count>open_count&&!msg.empty()&&msg.back()=='}'){
-            msg.pop_back();
-            close_count--;}
+        if (started&&first_complete_pos>start_pos){msg=msg.substr(start_pos,first_complete_pos-start_pos);}
         
         while (!msg.empty()&&(msg.back()==' '||msg.back()=='\n'||msg.back()=='\r'||msg.back()=='\t')){msg.pop_back();}
 
@@ -641,16 +679,46 @@ void run_zmq_server(LocationData* loc){
             {   std::lock_guard<std::mutex> lock(loc->mutex);
                 if (j.contains("location") && j["location"].is_object()){
                     auto& loc_data = j["location"];
-                    loc->latitude=loc_data.value("latitude",0.0f);
-                    loc->longitude=loc_data.value("longitude",0.0f);
-                    loc->altitude=loc_data.value("altitude",0.0f);
-                    loc->accuracy=loc_data.value("accuracy",0.0f);
+                    auto getFloatValue=[&](const json& obj,const std::string& key,float defaultVal=0.0f)->float{
+                        auto it=obj.find(key);
+                        if (it==obj.end()) return defaultVal;
+                        if (it->is_number_float()) return it->get<float>();
+                        if (it->is_number()) return static_cast<float>(it->get<double>());
+                        if (it->is_string()){
+                            try{return std::stof(it->get<std::string>());}
+                            catch(...){return defaultVal;}}
+                        return defaultVal;};
+                    
+                    auto getLongLongValue=[&](const json& obj,const std::string& key,long long defaultVal=0LL)->long long{
+                        auto it=obj.find(key);
+                        if (it==obj.end()) return defaultVal;
+                        if (it->is_number_integer()) return it->get<long long>();
+                        if (it->is_string()){
+                            try{return std::stoll(it->get<std::string>());}
+                            catch(...){return defaultVal;}}
+                        if (it->is_number()) return static_cast<long long>(it->get<double>());
+                        return defaultVal;};
+                    
+                    loc->latitude=getFloatValue(loc_data,"latitude",0.0f);
+                    loc->longitude=getFloatValue(loc_data,"longitude",0.0f);
+                    loc->altitude=getFloatValue(loc_data,"altitude",0.0f);
+                    loc->accuracy=getFloatValue(loc_data,"accuracy",0.0f);
                     loc->time=loc_data.value("time","No data");
-                    loc->time_milliseconds=loc_data.value("current_time",0LL);}
+                    loc->time_milliseconds=getLongLongValue(loc_data,"current_time",0LL);}
                 if (j.contains("traffic")){
-                    loc->traffic.total_rx=j["traffic"].value("total_rx",0LL);
-                    loc->traffic.total_tx=j["traffic"].value("total_tx",0LL);
-                    loc->traffic.total=j["traffic"].value("total",0LL);}
+                    auto& traffic=j["traffic"];
+                    auto getLL=[&](const json& obj,const std::string& key,long long defaultVal=0LL)->long long{
+                        auto it=obj.find(key);
+                        if (it==obj.end()) return defaultVal;
+                        if (it->is_number_integer()) return it->get<long long>();
+                        if (it->is_string()){
+                            try{return std::stoll(it->get<std::string>());}
+                            catch(...){return defaultVal;}}
+                        if (it->is_number()) return static_cast<long long>(it->get<double>());
+                        return defaultVal;};
+                    loc->traffic.total_rx=getLL(traffic,"total_rx",0LL);
+                    loc->traffic.total_tx=getLL(traffic,"total_tx",0LL);
+                    loc->traffic.total=getLL(traffic,"total",0LL);}
                 loc->cellTowers.clear();
                 if (j.contains("cells")){
                     for (const auto& cellJson:j["cells"]){
@@ -665,10 +733,9 @@ void run_zmq_server(LocationData* loc){
                         std::cout<<"  Cells: "<<loc->cellTowers.size()<<std::endl;
                         for (const auto& cell:loc->cellTowers){
                             std::cout<<"  ["<<cell.type<<"] mcc="<<cell.mcc<<" rsrp="<<cell.rsrp<<" cqi="<<cell.cqi<<" band="<<cell.band<<std::endl;
-                            if (isValidCell(cell)){g_database.insertCell(measurement_id,cell);
-                            }else{std::cout<<"  [!] Пропуск записи, кривые значения"<<std::endl;}}}
-                    std::cout<<"\033[32m[БД]\033[0m Измерение #"<<g_measurementCounter<<" сохранено"<<std::endl;}
-                else{std::cout<<"\033[33m[БД]\033[0m Не подключено, измерение #"<<g_measurementCounter<<" сохранено только в JSON"<<std::endl;}}
+                            g_database.insertCell(measurement_id,cell);}
+                        std::cout<<"\033[32m[БД]\033[0m Измерение #"<<g_measurementCounter<<" сохранено"<<std::endl;}
+                }else{std::cout<<"\033[33m[БД]\033[0m Не подключено, измерение #"<<g_measurementCounter<<" сохранено только в JSON"<<std::endl;}}
             zmq::message_t reply(5);
             memcpy(reply.data(),"OK",2);
             socket.send(reply,zmq::send_flags::none);
