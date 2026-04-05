@@ -5,16 +5,13 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include "common.h"
 
 #define DB_HOST "localhost"
 #define DB_PORT "5432"
 #define DB_NAME "mobile_network_db"
 #define DB_USER "postgres"
 #define DB_PASSWORD "postgres1234"
-
-struct CellTowerData;
-struct TrafficData;
-struct LocationData;
 
 class Database{
 public:

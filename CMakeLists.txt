@@ -71,6 +71,21 @@ target_include_directories(imgui PUBLIC
 )
 target_compile_options(imgui PRIVATE -fPIC)
 
+add_library(app_core STATIC
+        src/gui.cpp
+        src/server.cpp
+        src/json.cpp
+)
+target_include_directories(app_core PUBLIC
+        ${INCLUDE_DIR}
+        ${THIRD_PARTY_DIR}/imgui
+        ${THIRD_PARTY_DIR}/imgui/backends
+        ${THIRD_PARTY_DIR}/implot
+        ${PostgreSQL_INCLUDE_DIRS}
+        /usr/include/postgresql
+)
+target_link_libraries(app_core PUBLIC imgui)
+
 add_library(implot STATIC
         ${THIRD_PARTY_DIR}/implot/implot.cpp
         ${THIRD_PARTY_DIR}/implot/implot_demo.cpp
@@ -91,6 +106,7 @@ find_package(Threads REQUIRED)
 find_package(PostgreSQL REQUIRED)
 
 target_link_libraries(main PRIVATE
+        app_core
         imgui
         implot
         ${SDL2_LIBRARIES}

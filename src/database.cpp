@@ -1,24 +1,6 @@
 #include "database.h"
+#include "common.h"
 #include <sstream>
-
-struct CellTowerData{
-    std::string type;
-    int mcc=0,mnc=0,pci=0,tac=0,timing_advance=0,band=0;
-    int cell_identity=0,earfcn=0,asu_level=0,cqi=0;
-    int rsrp=0,rsrq=0,rssi=0,rssnr=0;
-    int bsic=0,arfcn=0,lac=0,dbm=0;
-    std::string nci;
-    int nrarfcn=0,ss_rsrp=0,ss_rsrq=0,ss_sinr=0;
-    long timing_advance_micros=0;};
-
-struct TrafficData {long long total_rx=0,total_tx=0,total=0;};
-
-struct LocationData{
-    float latitude=0.0f,longitude=0.0f,altitude=0.0f,accuracy=0.0f;
-    std::string time;
-    long long time_milliseconds=0;
-    TrafficData traffic;
-    std::vector<CellTowerData> cellTowers;};
 
 int Database::insertMeasurement(const LocationData& data,int counter){
     if (!conn) return -1;
