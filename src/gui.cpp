@@ -9,6 +9,7 @@
 #include "json.h"
 #include "database.h"
 #include "common.h"
+#include "tile_manager.h"
 
 extern SignalHistory g_signalHistory;
 
@@ -36,6 +37,7 @@ ImVec4 getColorForPCI(int pci,int index){
     return ImVec4(hue,0.7f,0.8f,1.0f);}
 
 void run_gui(LocationData* loc){
+	static TileManager g_tileManager;
     SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER);
     SDL_Window* window=SDL_CreateWindow(
         "LOCATION & TELEPHONY",
@@ -405,7 +407,38 @@ void run_gui(LocationData* loc){
                 ImGui::Columns(1);
                 if(i<loc->cellTowers.size()-1){ImGui::Spacing();ImGui::Separator();ImGui::Spacing();}}
         }else{ImGui::TextColored(ImVec4(1.00f,0.50f,0.50f,1.00f),"No cell tower data");}
-        ImGui::EndChild();
+		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::Spacing();
+		ImGui::TextColored(ImVec4(0.00f,0.70f,1.00f,1.00f),"OSM MAP");
+		ImGui::Separator();
+		ImGui::Spacing();
+
+		if (isValidLocation(*loc)){
+		    ImGui::BeginChild("MapContainer",ImVec2(0, 450),true);
+
+		    if (ImPlot::BeginPlot("##OSM_Map",ImVec2(-1, -1))){
+		        ImPlot::SetupAxes("Longitude","Latitude");
+ 		        ImPlot::SetupAxisFormat(ImAxis_X1,"%.6f°");
+		        ImPlot::SetupAxisFormat(ImAxis_Y1,"%.6f°");
+    		    double lon=loc->longitude;
+    		    double lat=loc->latitude;
+    		    double offset=0.015;
+    		    ImPlot::SetupAxisLimits(ImAxis_X1,lon-offset,lon+offset);
+    		    ImPlot::SetupAxisLimits(ImAxis_Y1,lat-offset,lat+offset);
+    		    ImPlotRect limits=ImPlot::GetPlotLimits();
+     		    g_tileManager.update();
+
+        		if (limits.X.Min>-180&&limits.X.Max<180&&limits.Y.Min>-90&&limits.Y.Max<90){
+            		g_tileManager.renderTiles(limits.X.Min,limits.X.Max,limits.Y.Min,limits.Y.Max);}
+		        double positions[2]={loc->longitude,loc->latitude};
+		        ImPlot::PlotScatter("You are here",positions,positions+1,1);
+		        ImPlot::EndPlot();}
+		    ImGui::EndChild();
+			}else{
+		    	ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.00f),
+        		"Waiting for location data...");}
+		ImGui::EndChild();
         ImGui::Columns(1);
         ImGui::End();
         ImGui::Render();

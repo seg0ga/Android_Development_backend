@@ -85,7 +85,7 @@ void updateSignalHistory(const LocationData& data){
 void run_zmq_server(LocationData* loc){
     zmq::context_t context(1);
     zmq::socket_t socket(context,ZMQ_REP);
-    socket.bind("tcp://*:443");
+    socket.bind("tcp://*:5555");
     std::cout<<"\033[32mZMQ сервер запущен на порту 443\033[0m"<<std::endl;
 
     while(true){

@@ -11,10 +11,12 @@ set(INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include)
 
 find_package(SDL2 REQUIRED)
 include_directories(${SDL2_INCLUDE_DIRS})
-
+find_package(PNG REQUIRED)
+find_package(CURL REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
-
+include_directories(${PNG_INCLUDE_DIRS})
+include_directories(${CURL_INCLUDE_DIRS})
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PC_ZMQ QUIET libzmq)
 
@@ -75,17 +77,27 @@ add_library(app_core STATIC
         src/gui.cpp
         src/server.cpp
         src/json.cpp
+        src/tile_manager.cpp
+        src/database.cpp
+        ${THIRD_PARTY_DIR}/stb/stb_image.cpp
 )
 target_include_directories(app_core PUBLIC
         ${INCLUDE_DIR}
         ${THIRD_PARTY_DIR}/imgui
         ${THIRD_PARTY_DIR}/imgui/backends
         ${THIRD_PARTY_DIR}/implot
+        ${THIRD_PARTY_DIR}/stb
         ${PostgreSQL_INCLUDE_DIRS}
         /usr/include/postgresql
 )
-target_link_libraries(app_core PUBLIC imgui)
-
+target_link_libraries(app_core PUBLIC
+        imgui
+        curl
+        ${PNG_LIBRARIES}
+        ${CURL_LIBRARIES}
+        png
+        png16
+)
 add_library(implot STATIC
         ${THIRD_PARTY_DIR}/implot/implot.cpp
         ${THIRD_PARTY_DIR}/implot/implot_demo.cpp
@@ -115,6 +127,7 @@ target_link_libraries(main PRIVATE
         ${ZMQ_LIBRARY}
         Threads::Threads
         PostgreSQL::PostgreSQL
+        curl
 )
 
 
@@ -130,6 +143,7 @@ target_include_directories(main PRIVATE
         ${SDL2_INCLUDE_DIRS}
         ${GLEW_INCLUDE_DIRS}
         ${OPENGL_INCLUDE_DIRS}
+        ${THIRD_PARTY_DIR}/stb
 )
 
 
