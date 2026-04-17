@@ -33,6 +33,9 @@ public:
     void clearQueue();
 
 private:
+    std::string getTilePath(int zoom,int x,int y);
+    bool saveTileToDisk(const std::string& path,const std::vector<uint8_t>& pngData);
+    bool loadTileFromDisk(const std::string& path,std::vector<uint8_t>& pngData);
     std::map<std::string, TextureData> m_tileCache;
     std::queue<TileJob> m_jobQueue;
     std::mutex m_jobMutex;

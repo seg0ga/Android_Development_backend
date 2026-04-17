@@ -6,6 +6,8 @@
 #include <iostream>
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include "implot.h"
 
 size_t WriteCallback(void* contents,size_t size,size_t nmemb,std::string* data){
@@ -15,11 +17,32 @@ size_t WriteCallback(void* contents,size_t size,size_t nmemb,std::string* data){
 
 TileManager::TileManager():m_running(true){
     curl_global_init(CURL_GLOBAL_DEFAULT);
+    std::filesystem::create_directories("build");
     std::thread(&TileManager::fetchWorker,this).detach();}
 
 TileManager::~TileManager(){
     m_running=false;
     curl_global_cleanup();}
+
+std::string TileManager::getTilePath(int zoom,int x,int y){
+    std::string path="build/"+std::to_string(zoom)+"/"+std::to_string(x);
+    std::filesystem::create_directories(path);
+    return path+"/"+std::to_string(y)+".png";}
+
+bool TileManager::saveTileToDisk(const std::string& path,const std::vector<uint8_t>& pngData){
+    std::ofstream file(path,std::ios::binary);
+    if(!file) return false;
+    file.write(reinterpret_cast<const char*>(pngData.data()),pngData.size());
+    return true;}
+
+bool TileManager::loadTileFromDisk(const std::string& path,std::vector<uint8_t>& pngData){
+    std::ifstream file(path,std::ios::binary|std::ios::ate);
+    if(!file) return false;
+    size_t size=file.tellg();
+    file.seekg(0,std::ios::beg);
+    pngData.resize(size);
+    file.read(reinterpret_cast<char*>(pngData.data()),size);
+    return true;}
 
 double TileManager::mercatorXToTileX(double mercatorX,int zoom){
     return (0.5+mercatorX/360.0)*(1<<zoom);}
@@ -63,12 +86,13 @@ bool TileManager::downloadTile(int zoom,int x,int y,std::vector<uint8_t>& rgbaDa
     curl_easy_setopt(curl,CURLOPT_URL,url.c_str());
     curl_easy_setopt(curl,CURLOPT_WRITEFUNCTION,WriteCallback);
     curl_easy_setopt(curl,CURLOPT_WRITEDATA,&response);
-    curl_easy_setopt(curl,CURLOPT_USERAGENT,"Mozilla/5.0");
+    curl_easy_setopt(curl,CURLOPT_USERAGENT,"Android_Development_backend");
     curl_easy_setopt(curl,CURLOPT_TIMEOUT,10L);
     CURLcode res=curl_easy_perform(curl);
     curl_easy_cleanup(curl);
     if (res!=CURLE_OK||response.empty()){return false;}
-
+    std::string tilePath=getTilePath(zoom,x,y);
+    saveTileToDisk(tilePath,std::vector<uint8_t>(response.begin(),response.end()));
     png_image image;
     memset(&image,0,sizeof(image));
     image.version=PNG_IMAGE_VERSION;
@@ -94,10 +118,28 @@ void TileManager::fetchWorker(){
                 hasJob=true;}}
 
         if (hasJob){
+            std::vector<uint8_t> pngData;
+            std::string tilePath=getTilePath(job.zoom,job.x,job.y);
             std::vector<uint8_t> rgbaData;
             int width,height;
-
-            if (downloadTile(job.zoom,job.x,job.y,rgbaData,width,height)){
+            if (loadTileFromDisk(tilePath,pngData)){
+                png_image image;
+                memset(&image,0,sizeof(image));
+                image.version=PNG_IMAGE_VERSION;
+                if (png_image_begin_read_from_memory(&image,pngData.data(),pngData.size())){
+                    width=image.width;
+                    height=image.height;
+                    image.format=PNG_FORMAT_RGBA;
+                    rgbaData.resize(PNG_IMAGE_SIZE(image));
+                    if (png_image_finish_read(&image,NULL,rgbaData.data(),0,NULL)){
+                        std::lock_guard<std::mutex> lock(m_cacheMutex);
+                        auto& tex=m_tileCache[job.id];
+                        tex.rgbaBlob=std::move(rgbaData);
+                        tex.width=width;
+                        tex.height=height;
+                        tex.isLoading=false;}
+                    png_image_free(&image);}
+            }else if(downloadTile(job.zoom,job.x,job.y,rgbaData,width,height)){
                 std::lock_guard<std::mutex> lock(m_cacheMutex);
                 auto& tex=m_tileCache[job.id];
                 tex.rgbaBlob=std::move(rgbaData);

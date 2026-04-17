@@ -432,7 +432,6 @@ void run_gui(LocationData* loc){
         		if (limits.X.Min>-180&&limits.X.Max<180&&limits.Y.Min>-90&&limits.Y.Max<90){
             		g_tileManager.renderTiles(limits.X.Min,limits.X.Max,limits.Y.Min,limits.Y.Max);}
 		        double positions[2]={loc->longitude,loc->latitude};
-		        ImPlot::PlotScatter("You are here",positions,positions+1,1);
 		        ImPlot::EndPlot();}
 		    ImGui::EndChild();
 			}else{
