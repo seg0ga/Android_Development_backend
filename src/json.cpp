@@ -60,7 +60,7 @@ void saveToJsonFile(const LocationData& data,int counter){
             cells.push_back(cellJson);}
         j["cells"]=cells;
 
-        const std::string filename="location_data.json";
+        const std::string filename="location_data666.json";
 
         json root;
         std::ifstream inputFile(filename);

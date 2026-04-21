@@ -48,13 +48,17 @@ double TileManager::mercatorXToTileX(double mercatorX,int zoom){
     return (0.5+mercatorX/360.0)*(1<<zoom);}
 
 double TileManager::mercatorYToTileY(double mercatorY,int zoom){
-    return (0.5-mercatorY/360.0)*(1<<zoom);}
+    double lat_rad=mercatorY*M_PI/180.0;
+    double y_normalized=0.5-log(tan(M_PI/4.0+lat_rad/2.0))/(2.0*M_PI);
+    return y_normalized*(1<<zoom);}
 
 double TileManager::tileXToMercatorX(int tileX,int zoom){
     return (tileX/static_cast<double>(1<<zoom)-0.5)*360.0;}
 
 double TileManager::tileYToMercatorY(int tileY,int zoom){
-    return (0.5-tileY/static_cast<double>(1<<zoom))*360.0;}
+    double y_normalized=tileY/static_cast<double>(1<<zoom);
+    double lat_rad=atan(sinh(M_PI*(1.0-2.0*y_normalized)));
+    return lat_rad*180.0/M_PI;}
 
 int TileManager::getZoomForLimits(double minLon,double maxLon){
     double diff=maxLon-minLon;
