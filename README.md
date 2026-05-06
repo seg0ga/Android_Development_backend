@@ -45,6 +45,7 @@
 
 ## Результаты
 
+<img width="1399" height="923" alt="image" src="https://github.com/user-attachments/assets/261b6da5-0b47-4313-805a-c837416014ff" />
 
 
 ## Установка зависимостей
