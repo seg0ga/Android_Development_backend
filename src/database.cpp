@@ -2,6 +2,18 @@
 #include "common.h"
 #include <sstream>
 
+bool Database::executeCommand(const std::string& sql){
+    if (!conn) return false;
+
+    PGresult* res=PQexec(conn,sql.c_str());
+    const bool success=PQresultStatus(res)==PGRES_COMMAND_OK;
+    if (!success){
+        std::cerr<<"\033[31mERROR\033[0m SQL command failed: "<<PQresultErrorMessage(res)<<"\n";
+    }
+    PQclear(res);
+    return success;
+}
+
 int Database::insertMeasurement(const LocationData& data,int counter){
     if (!conn) return -1;
     std::ostringstream query;
@@ -100,3 +112,36 @@ std::vector<std::vector<std::string>> Database::getMeasurements(int limit){
             results.push_back(row);}}
     PQclear(res);
     return results;}
+
+std::vector<HeatmapDbRow> Database::getHeatmapRows(){
+    std::vector<HeatmapDbRow> rows;
+    if (!conn) return rows;
+
+    const char* query=
+        "SELECT b.latitude, b.longitude, b.accuracy, b.altitude, c.earfcn, c.rsrp, c.rsrq, c.rssi "
+        "FROM based b "
+        "JOIN cells c ON c.measurement_id = b.id "
+        "WHERE c.type = 'LTE' "
+        "ORDER BY b.id";
+
+    PGresult* res=PQexec(conn,query);
+    if (PQresultStatus(res)!=PGRES_TUPLES_OK){
+        std::cerr<<"\033[31mERROR\033[0m heatmap query failed: "<<PQresultErrorMessage(res)<<"\n";
+        PQclear(res);
+        return rows;}
+
+    rows.reserve(PQntuples(res));
+    for (int i=0;i<PQntuples(res);++i){
+        HeatmapDbRow row;
+        row.latitude=std::stod(PQgetvalue(res,i,0));
+        row.longitude=std::stod(PQgetvalue(res,i,1));
+        row.accuracy=PQgetisnull(res,i,2)?0.0:std::stod(PQgetvalue(res,i,2));
+        row.altitude=std::stod(PQgetvalue(res,i,3));
+        row.earfcn=std::stoi(PQgetvalue(res,i,4));
+        row.rsrp=PQgetisnull(res,i,5)?2147483647:std::stoi(PQgetvalue(res,i,5));
+        row.rsrq=PQgetisnull(res,i,6)?2147483647:std::stoi(PQgetvalue(res,i,6));
+        row.rssi=PQgetisnull(res,i,7)?2147483647:std::stoi(PQgetvalue(res,i,7));
+        rows.push_back(row);}
+
+    PQclear(res);
+    return rows;}

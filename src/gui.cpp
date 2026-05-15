@@ -10,6 +10,7 @@
 #include "database.h"
 #include "common.h"
 #include "tile_manager.h"
+#include "heatmap.h"
 
 extern SignalHistory g_signalHistory;
 
@@ -38,6 +39,12 @@ ImVec4 getColorForPCI(int pci,int index){
 
 void run_gui(LocationData* loc){
 	static TileManager g_tileManager;
+    static bool heatmapEnabled=true;
+    static bool heatmapGenerated=false;
+    static int selectedMetric=0;
+    static int selectedEarfcn=0;
+    static int radiusMeters=40;
+    static int displayRadiusMeters=400;
     SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER);
     SDL_Window* window=SDL_CreateWindow(
         "LOCATION & TELEPHONY",
@@ -413,6 +420,32 @@ void run_gui(LocationData* loc){
 		ImGui::TextColored(ImVec4(0.00f,0.70f,1.00f,1.00f),"OSM MAP");
 		ImGui::Separator();
 		ImGui::Spacing();
+        ImGui::Checkbox("Show heatmap",&heatmapEnabled);
+        const char* metricItems[]={"RSRP","RSRQ","RSSI","Altitude"};
+        if (ImGui::Combo("Criterion",&selectedMetric,metricItems,IM_ARRAYSIZE(metricItems))){
+            heatmapGenerated=false;}
+
+        const auto metric=static_cast<HeatmapMetric>(selectedMetric);
+        std::vector<int> availableEarfcns=g_tileManager.getAvailableHeatmapEarfcns(metric);
+        if (!availableEarfcns.empty()){
+            if (std::find(availableEarfcns.begin(),availableEarfcns.end(),selectedEarfcn)==availableEarfcns.end()){
+                selectedEarfcn=availableEarfcns.front();}
+            if (ImGui::BeginCombo("EARFCN",std::to_string(selectedEarfcn).c_str())){
+                for (int earfcn:availableEarfcns){
+                    const bool isSelected=(selectedEarfcn==earfcn);
+                    if (ImGui::Selectable(std::to_string(earfcn).c_str(),isSelected)){
+                        selectedEarfcn=earfcn;
+                        heatmapGenerated=false;}
+                    if (isSelected){
+                        ImGui::SetItemDefaultFocus();}}
+                ImGui::EndCombo();}}
+        if (ImGui::Button("Generate heatmap")){
+            heatmapGenerated=true;
+            g_tileManager.clearHeatmapCache();}
+        ImGui::SameLine();
+        ImGui::TextUnformatted(heatmapGenerated?"ready":"press button");
+        g_tileManager.setHeatmapSelection({heatmapEnabled && heatmapGenerated,metric,selectedEarfcn,radiusMeters,displayRadiusMeters,2.0,0.55f});
+        ImGui::Spacing();
 
 		if (isValidLocation(*loc)){
 		    ImGui::BeginChild("MapContainer",ImVec2(0, 450),true);

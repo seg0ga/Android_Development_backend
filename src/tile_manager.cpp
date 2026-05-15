@@ -18,6 +18,7 @@ size_t WriteCallback(void* contents,size_t size,size_t nmemb,std::string* data){
 TileManager::TileManager():m_running(true){
     curl_global_init(CURL_GLOBAL_DEFAULT);
     std::filesystem::create_directories("build");
+    m_heatmapData.load();
     std::thread(&TileManager::fetchWorker,this).detach();}
 
 TileManager::~TileManager(){
@@ -43,6 +44,31 @@ bool TileManager::loadTileFromDisk(const std::string& path,std::vector<uint8_t>&
     pngData.resize(size);
     file.read(reinterpret_cast<char*>(pngData.data()),size);
     return true;}
+
+bool TileManager::decodePngToRgba(const std::vector<uint8_t>& pngData,std::vector<uint8_t>& rgbaData,int& width,int& height){
+    png_image image;
+    memset(&image,0,sizeof(image));
+    image.version=PNG_IMAGE_VERSION;
+    if (!png_image_begin_read_from_memory(&image,pngData.data(),pngData.size())) return false;
+    width=image.width;
+    height=image.height;
+    image.format=PNG_FORMAT_RGBA;
+    rgbaData.resize(PNG_IMAGE_SIZE(image));
+    if (!png_image_finish_read(&image,nullptr,rgbaData.data(),0,nullptr)){
+        png_image_free(&image);
+        return false;}
+    png_image_free(&image);
+    return true;}
+
+bool TileManager::saveRgbaTileToDisk(const std::string& path,const std::vector<uint8_t>& rgbaData,int width,int height){
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    png_image image;
+    memset(&image,0,sizeof(image));
+    image.version=PNG_IMAGE_VERSION;
+    image.width=width;
+    image.height=height;
+    image.format=PNG_FORMAT_RGBA;
+    return png_image_write_to_file(&image,path.c_str(),0,rgbaData.data(),0,nullptr)!=0;}
 
 double TileManager::mercatorXToTileX(double mercatorX,int zoom){
     return (0.5+mercatorX/360.0)*(1<<zoom);}
@@ -98,17 +124,7 @@ bool TileManager::downloadTile(int zoom,int x,int y,std::vector<uint8_t>& rgbaDa
     if (res!=CURLE_OK||response.empty()){return false;}
     std::string tilePath=getTilePath(zoom,x,y);
     saveTileToDisk(tilePath,std::vector<uint8_t>(response.begin(),response.end()));
-    png_image image;
-    memset(&image,0,sizeof(image));
-    image.version=PNG_IMAGE_VERSION;
-
-    if (!png_image_begin_read_from_memory(&image,response.data(),response.size())){return false;}
-    width=image.width;
-    height=image.height;
-    image.format=PNG_FORMAT_RGBA;
-    rgbaData.resize(PNG_IMAGE_SIZE(image));
-    if (!png_image_finish_read(&image,NULL,rgbaData.data(),0,NULL)){return false;}
-    png_image_free(&image);
+    if (!decodePngToRgba(std::vector<uint8_t>(response.begin(),response.end()),rgbaData,width,height)){return false;}
     return true;}
 
 void TileManager::fetchWorker(){
@@ -128,22 +144,13 @@ void TileManager::fetchWorker(){
             std::vector<uint8_t> rgbaData;
             int width,height;
             if (loadTileFromDisk(tilePath,pngData)){
-                png_image image;
-                memset(&image,0,sizeof(image));
-                image.version=PNG_IMAGE_VERSION;
-                if (png_image_begin_read_from_memory(&image,pngData.data(),pngData.size())){
-                    width=image.width;
-                    height=image.height;
-                    image.format=PNG_FORMAT_RGBA;
-                    rgbaData.resize(PNG_IMAGE_SIZE(image));
-                    if (png_image_finish_read(&image,NULL,rgbaData.data(),0,NULL)){
+                if (decodePngToRgba(pngData,rgbaData,width,height)){
                         std::lock_guard<std::mutex> lock(m_cacheMutex);
                         auto& tex=m_tileCache[job.id];
                         tex.rgbaBlob=std::move(rgbaData);
                         tex.width=width;
                         tex.height=height;
                         tex.isLoading=false;}
-                    png_image_free(&image);}
             }else if(downloadTile(job.zoom,job.x,job.y,rgbaData,width,height)){
                 std::lock_guard<std::mutex> lock(m_cacheMutex);
                 auto& tex=m_tileCache[job.id];
@@ -171,6 +178,60 @@ void TileManager::update(){
             glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,tex.width,tex.height,0,GL_RGBA,GL_UNSIGNED_BYTE,tex.rgbaBlob.data());
             tex.rgbaBlob.clear();
             tex.rgbaBlob.shrink_to_fit();}}}
+
+void TileManager::setHeatmapSelection(const HeatmapSelection& selection){
+    m_heatmapSelection=selection;}
+
+std::vector<int> TileManager::getAvailableHeatmapEarfcns(HeatmapMetric metric) const{
+    return m_heatmapData.getAvailableEarfcns(metric);}
+
+void TileManager::clearHeatmapCache(){
+    m_heatmapCache.clear();}
+
+GLuint TileManager::getHeatmapTextureId(int zoom,int x,int y){
+    if (!m_heatmapSelection.enabled||!m_heatmapData.isLoaded()){
+        return 0;}
+
+    const std::string cacheKey=std::string(HeatmapData::metricName(m_heatmapSelection.metric))+"/"+
+                               std::to_string(m_heatmapSelection.earfcn)+"/"+
+                               std::to_string(m_heatmapSelection.radiusMeters)+"/"+
+                               std::to_string(m_heatmapSelection.displayRadiusMeters)+"/"+
+                               std::to_string(zoom)+"/"+std::to_string(x)+"/"+std::to_string(y);
+
+    auto cacheIt=m_heatmapCache.find(cacheKey);
+    if (cacheIt!=m_heatmapCache.end()){
+        if (cacheIt->second.isMissing){
+            return 0;}
+        return cacheIt->second.id;}
+
+    std::vector<uint8_t> pngData;
+    std::vector<uint8_t> rgbaData;
+    int width=0;
+    int height=0;
+    const std::string heatmapPath=m_heatmapData.getTilePath(m_heatmapSelection,zoom,x,y);
+
+    if (loadTileFromDisk(heatmapPath,pngData)){
+        if (!decodePngToRgba(pngData,rgbaData,width,height)){
+            m_heatmapCache[cacheKey].isMissing=true;
+            return 0;}}
+    else{
+        if (!m_heatmapData.renderTile(m_heatmapSelection,zoom,x,y,rgbaData,width,height)){
+            m_heatmapCache[cacheKey].isMissing=true;
+            return 0;}
+        saveRgbaTileToDisk(heatmapPath,rgbaData,width,height);}
+
+    TextureData texture;
+    texture.width=width;
+    texture.height=height;
+    glGenTextures(1,&texture.id);
+    glBindTexture(GL_TEXTURE_2D,texture.id);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,width,height,0,GL_RGBA,GL_UNSIGNED_BYTE,rgbaData.data());
+    m_heatmapCache[cacheKey]=texture;
+    return texture.id;}
 
 void TileManager::renderTiles(double minX,double maxX,double minY,double maxY){
     int zoom=getZoomForLimits(minX,maxX);
@@ -214,4 +275,6 @@ void TileManager::renderTiles(double minX,double maxX,double minY,double maxY){
             if (gpuId!=0){
                 ImPlotPoint minPoint{tileXToMercatorX(x,zoom),tileYToMercatorY(y+1,zoom)};
                 ImPlotPoint maxPoint{tileXToMercatorX(x+1,zoom),tileYToMercatorY(y,zoom)};
-                ImPlot::PlotImage(("##tile_"+tileId).c_str(),(ImTextureID)(intptr_t)gpuId,minPoint,maxPoint);}}}}
+                ImPlot::PlotImage(("##tile_"+tileId).c_str(),(ImTextureID)(intptr_t)gpuId,minPoint,maxPoint);
+                const GLuint heatmapGpuId=getHeatmapTextureId(zoom,x,y);
+                if (heatmapGpuId!=0){ImPlot::PlotImage(("##heatmap_"+tileId).c_str(),(ImTextureID)(intptr_t)heatmapGpuId,minPoint,maxPoint);}}}}}

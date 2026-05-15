@@ -77,6 +77,7 @@ add_library(app_core STATIC
         src/gui.cpp
         src/server.cpp
         src/json.cpp
+        src/heatmap.cpp
         src/tile_manager.cpp
         src/database.cpp
         ${THIRD_PARTY_DIR}/stb/stb_image.cpp

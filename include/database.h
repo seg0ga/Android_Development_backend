@@ -13,6 +13,17 @@
 #define DB_USER "postgres"
 #define DB_PASSWORD "postgres1234"
 
+struct HeatmapDbRow{
+    double latitude=0.0;
+    double longitude=0.0;
+    double accuracy=0.0;
+    double altitude=0.0;
+    int earfcn=0;
+    int rsrp=0;
+    int rsrq=0;
+    int rssi=0;
+};
+
 class Database{
 public:
     Database():conn(nullptr) {}
@@ -36,11 +47,15 @@ public:
 
     bool isConnected() const {return conn!=nullptr&&PQstatus(conn)==CONNECTION_OK;}
 
+    bool executeCommand(const std::string& sql);
     int insertMeasurement(const LocationData& data,int counter);
     bool insertCell(int measurement_id,const CellTowerData& cell);
     std::vector<std::vector<std::string>> getMeasurements(int limit=10);
+    std::vector<HeatmapDbRow> getHeatmapRows();
 
 private:
     PGconn* conn;};
+
+extern Database g_database;
 
 #endif
