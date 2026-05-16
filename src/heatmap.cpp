@@ -23,6 +23,11 @@ double smoothstep(double edge0,double edge1,double x){
     const double t=clamp01((x-edge0)/(edge1-edge0));
     return t*t*(3.0-2.0*t);}
 
+double dbmToMilliwatts(double dbm){return std::pow(10.0,dbm/10.0);}
+double milliwattsToDbm(double mw){return 10.0*std::log10(mw);}
+double dbToLinear(double db){return std::pow(10.0,db/10.0);}
+double linearToDb(double linear){return 10.0*std::log10(linear);}
+
 }
 
 bool HeatmapData::load(){
@@ -90,6 +95,8 @@ bool HeatmapData::renderTile(const HeatmapSelection& selection,int zoom,int x,in
         candidates.push_back(&sample);}
     if (candidates.empty()) return false;
 
+    const bool isLogarithmic=(selection.metric==HeatmapMetric::RSRP||selection.metric==HeatmapMetric::RSRQ||selection.metric==HeatmapMetric::RSSI);
+
     bool hasVisiblePixels=false;
     for (int pixelY=0;pixelY<height;++pixelY){
         const double latitude=tilePixelToLatitude(zoom,y,pixelY,height);
@@ -121,13 +128,23 @@ bool HeatmapData::renderTile(const HeatmapSelection& selection,int zoom,int x,in
 
                 const double softenedDistance=std::max(1.0,distance);
                 const double radialWeight=std::max(0.05,1.0-distance/sampleRadius);
-                const double weight=radialWeight/std::pow(softenedDistance,std::max(1.0,selection.power*0.7));
-                weightedSum+=sample->value*weight;
+                double weight=radialWeight/std::pow(softenedDistance,std::max(1.0,selection.power*0.7));
+
+                if(isLogarithmic){
+                    double linearValue;
+                    if(selection.metric==HeatmapMetric::RSRQ){linearValue=dbToLinear(sample->value);
+                    }else{linearValue=dbmToMilliwatts(sample->value);}
+                    weightedSum+=linearValue*weight;
+                }else{weightedSum+=sample->value*weight;}
                 totalWeight+=weight;}
 
             if (!directHit){
                 if (totalWeight<=0.0) continue;
-                interpolatedValue=weightedSum/totalWeight;}
+                if(isLogarithmic){
+                    double avgLinear=weightedSum/totalWeight;
+                    if(selection.metric==HeatmapMetric::RSRQ){interpolatedValue=linearToDb(avgLinear);
+                    }else{interpolatedValue=milliwattsToDbm(avgLinear);}
+                }else{interpolatedValue=weightedSum/totalWeight;}}
 
             if (!isFiniteNumber(interpolatedValue)) continue;
             if (!config.useDynamicRange&&interpolatedValue<=config.transparentBelow) continue;

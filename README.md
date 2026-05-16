@@ -34,7 +34,7 @@ No Signal/Unusable  (<-110 dBm): Connection often fails
 
 ## Результаты
 
-
+![img.png](img.png)
 
 ## Установка зависимостей
 ```
