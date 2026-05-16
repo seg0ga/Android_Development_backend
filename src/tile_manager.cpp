@@ -82,8 +82,8 @@ void TileManager::clearQueue(){
         m_jobQueue.pop();}}
 
 bool TileManager::downloadTile(int zoom,int x,int y,std::vector<uint8_t>& rgbaData,int& width,int& height){
-    std::string url="https://tiles.api-maps.yandex.ru/v1/tiles/?x="+std::to_string(x)+"&y="+std::to_string(y)+"z="+std::to_string(zoom)+"&lang=ru_RU&l=map&apikey=cc1e5c4a-192f-49ac-9f64-683d0c86fa47";
-    //std::string url="https://tile.openstreetmap.org/"+std::to_string(zoom)+"/"+std::to_string(x)+"/"+std::to_string(y)+".png";
+    //std::string url="https://tiles.api-maps.yandex.ru/v1/tiles/?x="+std::to_string(x)+"&y="+std::to_string(y)+"z="+std::to_string(zoom)+"&lang=ru_RU&l=map&apikey=cc1e5c4a-192f-49ac-9f64-683d0c86fa47";
+    std::string url="https://tile.openstreetmap.org/"+std::to_string(zoom)+"/"+std::to_string(x)+"/"+std::to_string(y)+".png";
     CURL* curl=curl_easy_init();
     if (!curl) return false;
 
